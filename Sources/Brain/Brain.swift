@@ -140,6 +140,9 @@ final class Brain {
     private var lastQuirkTime: CGFloat = 0
     /// Tasks a running task wants to add after itself (queue cannot change while a task runs).
     private var followUps: [Task] = []
+    /// A `.call` task's action, run once the task is off the queue: the action may rewrite the
+    /// queue (a scene's next step), which it cannot do while `run` holds `queue[0]` inout.
+    private var pendingCall: (() -> Void)?
     /// The fly the cat is hunting, if any.
     private(set) var fly: Fly?
     /// Something to play with other than the pointer (a laser dot, a ball of yarn).
@@ -294,6 +297,10 @@ final class Brain {
                 if !followUps.isEmpty {
                     queue.insert(contentsOf: followUps, at: 0)
                     followUps.removeAll()
+                }
+                if let call = pendingCall {
+                    pendingCall = nil
+                    call()
                 }
                 if queue.isEmpty { break }
                 continue
@@ -526,7 +533,7 @@ final class Brain {
             return body.isGrounded
 
         case .call(let action):
-            action()
+            pendingCall = action
             return true
 
         case .focus(let target, let k, let tail, let f, let ramp):
