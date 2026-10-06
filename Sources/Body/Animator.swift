@@ -13,6 +13,7 @@ struct Flourish: OptionSet {
     static let meow = Flourish(rawValue: 1 << 7)
     static let yawn = Flourish(rawValue: 1 << 8)
     static let eat = Flourish(rawValue: 1 << 9)
+    static let scramble = Flourish(rawValue: 1 << 10)
 }
 
 /// What the view needs to place the drawing on screen.
@@ -35,6 +36,10 @@ final class Animator {
     var lookAtViewer = false
     var eyesClosed = false
     var beat: CGFloat = 2
+    var coat: CatCoat = .black
+    var comic = false
+    private var boil: CGFloat = 0
+    private var nextBoil: CGFloat = 0
 
     private(set) var pose = CatPose.make(.stand)
     private let tail = TailChain()
@@ -114,6 +119,12 @@ final class Animator {
         }
         if flourish.contains(.eat) {
             p.head.y += sin(time * 9) * 1.4
+        }
+        if flourish.contains(.scramble) {
+            p.feet[2].y += sin(time * 15) * 6
+            p.feet[3].y += sin(time * 15 + .pi) * 6
+            p.feet[2].x += cos(time * 15) * 3
+            p.hip.x += sin(time * 7) * 1.5
         }
         if flourish.contains(.purr) {
             p.headTilt += sin(time * 1.3) * 0.06
@@ -195,10 +206,15 @@ final class Animator {
         let groundY: CGFloat? = body.isGrounded ? 0 : nil
         let pts = tail.step(dt, root: CatRig.tailRoot(p), style: style, accel: a, groundY: groundY)
 
+        // The comic ink line redraws itself a few times a second, like hand drawn animation.
+        nextBoil -= dt
+        if nextBoil <= 0 { boil = .random(in: 0...1); nextBoil = 0.12 }
         let look = CatLook(pose: p, tail: pts, tailPuff: style.puff, gaze: gaze,
                            glow: dark ? 0.9 : 0.35,
                            groundShadow: body.isGrounded ? 0.18 : 0,
-                           halo: dark ? 0.3 : 0.18)
+                           halo: dark ? 0.3 : 0.18,
+                           coat: coat, comic: comic, boil: boil,
+                           happy: flourish.contains(.purr))
         let frame = CatFrame(look: look, rotation: displayRotation, facing: facingScale, scale: body.scale)
         lastFrame = frame
         return frame

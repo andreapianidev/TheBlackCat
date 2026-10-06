@@ -18,6 +18,9 @@ struct SettingsView: View {
     @ObservedObject var settings: CatSettings
     let readout: CatReadout
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var hasAgnesKey = AgnesKey.load() != nil
+    @State private var pastedKey = ""
+    @State private var keyNote = ""
 
     var body: some View {
         Form {
@@ -28,12 +31,19 @@ struct SettingsView: View {
                     ForEach(CatSize.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Picker("Tipo di gatto", selection: $settings.coat) {
+                    ForEach(CatCoat.all) { c in
+                        Text(c.name).tag(c.id)
+                    }
+                }
+                Toggle("Stile fumetto", isOn: $settings.comic)
                 Toggle("Miagolii e fusa", isOn: $settings.sound)
                 if settings.sound {
                     Slider(value: $settings.volume, in: 0.1...1) { Text("Volume") }
                 }
                 Toggle("Pensieri nel fumetto", isOn: $settings.thoughts)
             }
+            brainSection
             Section {
                 sense("Vista", "camera", $settings.sight,
                       "Con la fotocamera si accorge quando sei davanti al Mac, ti guarda, e se lo saluti con la mano ti risponde. Se te ne vai, va a dormire.")
@@ -60,7 +70,7 @@ struct SettingsView: View {
             } header: {
                 Text("I sensi")
             } footer: {
-                Text("Tutto quello che vede e sente resta su questo Mac. Niente viene salvato o inviato.")
+                Text("Tutto quello che vede e sente resta su questo Mac e non viene salvato, tranne quando scegli Agnes: in quel caso i pensieri e, se lo attivi, l'immagine dello schermo vanno ad Agnes.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Come sta") {
@@ -100,9 +110,41 @@ struct SettingsView: View {
         .frame(minHeight: 560)
     }
 
+    private var brainSection: some View {
+        Section("Cervello") {
+            Picker("Pensieri scritti da", selection: $settings.brain) {
+                Text("Apple Intelligence, sul Mac").tag("apple")
+                Text("Agnes, nel cloud").tag("agnes")
+            }
+            Label(hasAgnesKey ? "Chiave Agnes presente nel portachiavi" : "Manca la chiave Agnes",
+                  systemImage: hasAgnesKey ? "key.fill" : "key.slash")
+                .foregroundStyle(hasAgnesKey ? Color.secondary : Color.orange)
+            Button("Importa la chiave dal vault (~/.secrets)") {
+                let ok = AgnesKey.importFromVault()
+                hasAgnesKey = AgnesKey.load() != nil
+                keyNote = ok ? "Chiave importata." : "Non ho trovato AGNES_API_KEY in ~/.secrets/agnes-ai.env."
+            }
+            HStack {
+                SecureField("Oppure incolla la chiave", text: $pastedKey)
+                Button("Salva") {
+                    AgnesKey.save(pastedKey)
+                    pastedKey = ""
+                    hasAgnesKey = AgnesKey.load() != nil
+                    keyNote = hasAgnesKey ? "Chiave salvata." : "Chiave non salvata."
+                }
+                .disabled(pastedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if !keyNote.isEmpty {
+                Text(keyNote).font(.footnote).foregroundStyle(.secondary)
+            }
+            sense("Agnes guarda lo schermo", "eye.trianglebadge.exclamationmark", $settings.agnesVision,
+                  "Ogni qualche minuto un'immagine dello schermo, ridotta, esce dal Mac e va ad Agnes, che risponde con un pensiero e con quello che ha visto. Funziona solo con gli occhi sullo schermo accesi.")
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 14) {
-            if let img = CatRig.image(.sit, size: 128, glow: 1) {
+            if let img = CatRig.image(.sit, size: 128, glow: 1, coat: CatCoat.named(settings.coat), comic: settings.comic) {
                 Image(decorative: img, scale: 2)
             }
             VStack(alignment: .leading, spacing: 4) {

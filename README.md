@@ -45,6 +45,13 @@ Foglio con tutte le posture: `tools/PoseSheet`.
   (la ciotola, il puntatore, un posto preferito), reazioni agli eventi.
   I pensieri nel fumetto li scrive Apple Intelligence sul Mac
   (Foundation Models), con frasi scritte a mano quando non c'è.
+  Nelle impostazioni, sezione «Cervello», si può scegliere invece Agnes nel
+  cloud (`agnes-2.5-flash`, `Sources/Brain/AgnesClient.swift`): se Agnes non
+  risponde si torna ad Apple Intelligence, poi alle frasi scritte a mano.
+  La chiave sta nel portachiavi del Mac e si importa dal vault
+  (`~/.secrets/agnes-ai.env`) o si incolla a mano. Con «Agnes guarda lo
+  schermo» un'immagine ridotta dello schermo va ad Agnes ogni due minuti e mezzo
+  al massimo.
 - `Sources/Senses`: tutto facoltativo, si accende dalle impostazioni.
   - Vista: fotocamera e Vision, ti riconosce davanti al Mac, risponde al saluto.
   - Udito: SoundAnalysis (mani, cani, fischi, musica) e riconoscimento vocale
@@ -59,6 +66,8 @@ Foglio con tutte le posture: `tools/PoseSheet`.
 - `Widget`: widget per la scrivania con lo stato del gatto e un bottone per la
   pappa. `Shared/CatIntents.swift`: azioni per Comandi rapidi, Siri e Spotlight.
 
-Quello che il gatto vede e sente resta sul Mac. Niente viene salvato o inviato.
+Quello che il gatto vede e sente resta sul Mac e non viene salvato. L'unica
+eccezione è Agnes, se la scegli: allora la situazione da cui nasce un pensiero
+e, solo se lo attivi, l'immagine ridotta dello schermo vanno ad Agnes.
 
 © 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias

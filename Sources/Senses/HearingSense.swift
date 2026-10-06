@@ -23,6 +23,9 @@ final class HearingSense: NSObject, SNResultsObserving {
     private var musicOn = false
     private var mutedUntil = Date.distantPast
     private var running = false
+    /// Speech recognition only listens while SoundAnalysis hears someone talking.
+    private var speechOpenUntil = Date.distantPast
+    private var preroll: [AVAudioPCMBuffer] = []
 
     /// Ignore what we hear for a moment, so the cat does not react to its own meow.
     func mute(for seconds: TimeInterval) { mutedUntil = Date().addingTimeInterval(seconds) }
@@ -58,6 +61,7 @@ final class HearingSense: NSObject, SNResultsObserving {
 
         let analyzer = SNAudioStreamAnalyzer(format: format)
         if let req = try? SNClassifySoundRequest(classifierIdentifier: .version1) {
+            req.overlapFactor = 0
             try? analyzer.add(req, withObserver: self)
         }
         self.analyzer = analyzer
@@ -74,9 +78,30 @@ final class HearingSense: NSObject, SNResultsObserving {
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, when in
             guard let self else { return }
             self.analysisQueue.async { self.analyzer?.analyze(buffer, atAudioFramePosition: when.sampleTime) }
-            self.requestLock.withLock { self.request?.append(buffer) }
+            self.requestLock.withLock {
+                guard self.request != nil else { return }
+                if Date() < self.speechOpenUntil {
+                    for b in self.preroll { self.request?.append(b) }
+                    self.preroll.removeAll()
+                    self.request?.append(buffer)
+                } else if let copy = Self.copy(buffer) {
+                    // Keep about a second, so the first word ("Nerone!") is not lost.
+                    self.preroll.append(copy)
+                    if self.preroll.count > 12 { self.preroll.removeFirst() }
+                }
+            }
         }
         try? engine.start()
+    }
+
+    private static func copy(_ b: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let c = AVAudioPCMBuffer(pcmFormat: b.format, frameCapacity: b.frameLength),
+              let src = b.floatChannelData, let dst = c.floatChannelData else { return nil }
+        c.frameLength = b.frameLength
+        for ch in 0..<Int(b.format.channelCount) {
+            dst[ch].update(from: src[ch], count: Int(b.frameLength))
+        }
+        return c
     }
 
     private func startRecognition() {
@@ -139,6 +164,9 @@ final class HearingSense: NSObject, SNResultsObserving {
     func request(_ request: SNRequest, didProduce result: SNResult) {
         guard let r = result as? SNClassificationResult else { return }
         let top = r.classifications.prefix(3).filter { $0.confidence > 0.55 }.map { $0.identifier.lowercased() }
+        if r.classifications.prefix(3).contains(where: { $0.identifier.lowercased().contains("speech") && $0.confidence > 0.4 }) {
+            requestLock.withLock { speechOpenUntil = Date().addingTimeInterval(4) }
+        }
         DispatchQueue.main.async { self.classified(top) }
     }
 

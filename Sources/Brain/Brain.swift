@@ -1,7 +1,7 @@
 import AppKit
 
 enum CatSound { case meow, meowLong, demand, trill, hiss, crunch, chatter }
-enum ParticleKind { case zzz, heart, bang, note, question, ring }
+enum ParticleKind { case zzz, heart, bang, note, question, ring, sweat, anger, dust, speed, sparkle }
 enum WeatherMood: Equatable { case rain, sun, cold, heat, mild }
 
 /// Things that happen to the cat, from the senses, the menu or the system.
@@ -25,6 +25,8 @@ enum CatEvent {
     case find
     case clicked, doubleClicked
     case thrown(speed: CGFloat)
+    /// The pointer is being waved around near the cat: someone wants to play.
+    case playing
 }
 
 /// How the brain acts on the world. The controller implements it.
@@ -37,6 +39,7 @@ protocol BrainOutput: AnyObject {
     func play(_ sound: CatSound)
     func emit(_ particle: ParticleKind)
     func nudge(window: UInt32, dx: CGFloat)
+    func minimize(window: UInt32)
     func ate(_ fraction: CGFloat)
     func sleptOn(owner: String)
 }
@@ -48,12 +51,17 @@ private enum TaskKind {
     case stalk
     case eat
     case nudge(window: UInt32, dx: CGFloat)
+    case minimize(window: UInt32)
     case say(ThoughtTopic)
     case text(String)
     case sound(CatSound)
     case face(CGFloat)
     case particle(ParticleKind)
     case hop(CGFloat)
+    case spin
+    case watchFly
+    case pounceFly
+    case flyOutcome
 }
 
 private struct Task {
@@ -105,6 +113,21 @@ final class Brain {
     private var thrownPending = false
     private var lastMischief: CGFloat = -900
     private var viewerGlanceUntil: CGFloat = 0
+    private var hangUntil: CGFloat = 0
+    private var hangPull = false
+    private var lastLights: CGFloat = -900
+    private var lastMinimize: CGFloat = -3600
+    private var clickTimes: [CGFloat] = []
+    private var playUntil: CGFloat = 0
+    private var lastFly: CGFloat = -600
+    private var nextFlip: CGFloat = 0
+    private var nextScratchSound: CGFloat = 0
+    private var slipDecided = false
+    private var slipAt: CGFloat = .infinity
+    /// Tasks a running task wants to add after itself (queue cannot change while a task runs).
+    private var followUps: [Task] = []
+    /// The fly the cat is hunting, if any.
+    private(set) var fly: Fly?
 
     init(body: CatBody, anim: Animator) {
         self.body = body
@@ -125,6 +148,7 @@ final class Brain {
         case .dragged: return "Penzola dalla tua mano"
         case .airborne: return "Vola"
         case .climbing: return "Si arrampica"
+        case .hanging(let id, _, _): return id == nil ? "Penzola dalla barra dei menu" : "Si regge con le unghie"
         default: break
         }
         if isPetted { return "Fa le fusa" }
@@ -141,6 +165,9 @@ final class Brain {
             case .hiss: return "Soffia"
             case .knead: return "Fa la pasta"
             case .wave: return "Ti saluta"
+            case .paw: return "Gioca con i bottoni della finestra"
+            case .belly: return "Pancia all'aria"
+            case .scratch: return "Si fa le unghie"
             case .crouch: return "Sta in agguato"
             default: return "Si guarda intorno"
             }
@@ -149,6 +176,8 @@ final class Brain {
         case .stalk: return "Caccia il puntatore"
         case .eat: return "Mangia"
         case .nudge: return "Combina un guaio"
+        case .spin: return "Si rincorre la coda"
+        case .watchFly, .pounceFly: return "Caccia una mosca"
         default: return "Si guarda intorno"
         }
     }
@@ -159,7 +188,7 @@ final class Brain {
         switch t.kind {
         case .hold(.sleep, _, _): return .sleeping
         case .hold: return .resting
-        case .walk(_, .run), .stalk: return .playing
+        case .walk(_, .run), .stalk, .spin, .pounceFly: return .playing
         case .eat: return .eating
         default: return .active
         }
@@ -170,6 +199,10 @@ final class Brain {
     func update(_ dt: CGFloat, world: World) {
         self.world = world
         time += dt
+        if let f = fly {
+            f.update(dt)
+            if f.gone { fly = nil }
+        }
         needs.tick(Double(dt), doing: doing)
         anim.flourish = []
         anim.eyesClosed = false
@@ -185,14 +218,44 @@ final class Brain {
         case .climbing:
             anim.kind = .stand
             anim.tailStyle = .alert
+            // Sometimes the claws do not hold: a scramble, then down it goes.
+            if !slipDecided {
+                slipDecided = true
+                let chance = 0.18 + (1 - needs.energy) * 0.15
+                slipAt = Double.random(in: 0..<1) < chance ? time + .random(in: 0.4...1.3) : .infinity
+            }
+            if time >= slipAt {
+                slipAt = .infinity
+                body.slip()
+                anim.startle()
+                out?.emit(.bang)
+                out?.emit(.sweat)
+                if Int.random(in: 0..<3) == 0 { out?.sayText(["Unghie corte oggi.", "Non è successo niente.", "Era scivoloso. Giuro."].randomElement()!) }
+                return
+            }
             if let e = body.climb(dt, time: time, world: world) { bodyEvent(e) }
             return
         case .airborne:
             anim.kind = body.vel.dy > 0 ? .airUp : .airDown
             anim.tailStyle = .falling
             return
+        case .hanging(let id, _, _):
+            anim.kind = .hang
+            anim.tailStyle = .hanging
+            anim.flourish = [.scramble]
+            anim.lookAt = out?.cursor
+            if time >= hangUntil {
+                if hangPull && id != nil && body.pullUp(world) {
+                    anim.landed(speed: 300)
+                } else {
+                    body.letGo()
+                    out?.emit(.sweat)
+                    if Int.random(in: 0..<3) == 0 { queue.insert(Task(kind: .say(id == nil ? .onTop : .clap)), at: 0) }
+                }
+            }
+            return
         case .grounded:
-            break
+            slipDecided = false
         }
 
         if isPetted {
@@ -206,6 +269,10 @@ final class Brain {
             guardCount += 1
             if run(&queue[0], dt, world) {
                 queue.removeFirst()
+                if !followUps.isEmpty {
+                    queue.insert(contentsOf: followUps, at: 0)
+                    followUps.removeAll()
+                }
                 if queue.isEmpty { break }
                 continue
             }
@@ -220,8 +287,10 @@ final class Brain {
             anim.landed(speed: speed)
             if thrownPending {
                 thrownPending = false
+                out?.emit(.sweat)
                 if speed > 1100 || needs.grudge > 0.4 {
-                    queue = [Task.hold(.hiss, 0.8...1.2, .angry), Task(kind: .say(.thrown)), Task.hold(.sit, 1.5...3, .annoyed, .lick)]
+                    queue = [Task(kind: .particle(.anger)), Task.hold(.hiss, 0.8...1.2, .angry), Task(kind: .say(.thrown)),
+                             Task.hold(.sit, 1.5...3, .annoyed, .lick)]
                     out?.play(.hiss)
                 } else {
                     queue = [Task(kind: .say(.thrown)), Task.hold(.groom, 2...4, .annoyed, .lick)]
@@ -230,6 +299,14 @@ final class Brain {
         case .startedFalling:
             goal = nil
             queue.removeAll()
+        case .grabbedEdge:
+            if case .hanging(let id, _, _) = body.loco, id == nil {
+                hangUntil = time + .random(in: 2...5)
+                hangPull = false
+            } else {
+                hangUntil = time + .random(in: 0.9...2.2)
+                out?.emit(.sweat)
+            }
         case .grabbedWall, .mantled:
             break
         }
@@ -263,6 +340,10 @@ final class Brain {
                 if nextZ <= 0 { out?.emit(.zzz); nextZ = .random(in: 1.6...2.6) }
             }
             if musicPlaying && (k == .sit || k == .loaf) { anim.flourish.insert(.sway) }
+            if k == .scratch {
+                nextScratchSound -= dt
+                if nextScratchSound <= 0 { out?.play(.crunch); nextScratchSound = .random(in: 0.2...0.35) }
+            }
             if t.elapsed >= t.duration {
                 if k == .sleep, let id = body.windowUnderneath, let w = world.window(id) { out?.sleptOn(owner: w.owner) }
                 return true
@@ -281,7 +362,16 @@ final class Brain {
                 anim.flourish = [.wiggle]
                 body.turn(toward: m.target.x)
                 if t.elapsed > 0.32 {
-                    body.launch(to: m.target, grab: m.grab)
+                    if let hang = m.hang {
+                        body.launch(to: m.target, hang: hang)
+                    } else if m.grab == nil, let id = m.targetWindow, m.target.y > body.pos.y + 50 * body.scale,
+                              Double.random(in: 0..<1) < missChance {
+                        // Misjudged it: only the front paws make it to the edge.
+                        hangPull = Double.random(in: 0..<1) < 0.6
+                        body.launch(to: m.target, hang: (id, m.target.y))
+                    } else {
+                        body.launch(to: m.target, grab: m.grab)
+                    }
                     t.launched = true
                 }
                 return false
@@ -316,6 +406,7 @@ final class Brain {
             out?.ate(min(1, t.elapsed / max(t.duration, 0.1)))
             if t.elapsed >= t.duration {
                 needs.fed()
+                out?.emit(.sparkle)
                 out?.say(.fed)
                 return true
             }
@@ -331,6 +422,9 @@ final class Brain {
             }
             return t.elapsed > 1.1
 
+        case .minimize(let id):
+            out?.minimize(window: id)
+            return true
         case .say(let topic):
             out?.say(topic)
             return true
@@ -349,6 +443,58 @@ final class Brain {
         case .hop(let vy):
             if !t.launched { body.hop(vy * body.scale); t.launched = true; return false }
             return body.isGrounded
+
+        case .spin:
+            // Chasing its own tail: round and round on the spot.
+            anim.kind = .crouch
+            anim.tailStyle = .stalking
+            anim.flourish = [.wiggle]
+            nextFlip -= dt
+            if nextFlip <= 0 {
+                body.facing = -body.facing
+                nextFlip = .random(in: 0.18...0.3)
+                if Int.random(in: 0..<3) == 0 { out?.emit(.dust) }
+            }
+            return t.elapsed >= t.duration
+
+        case .watchFly:
+            guard let f = fly else { return true }
+            anim.kind = t.elapsed > t.duration * 0.6 ? .crouch : .sit
+            anim.tailStyle = .stalking
+            anim.lookAt = f.pos
+            anim.flourish = t.elapsed > t.duration * 0.6 ? [.wiggle, .chatter] : [.chatter]
+            body.turn(toward: f.pos.x)
+            return t.elapsed >= t.duration
+
+        case .pounceFly:
+            guard let f = fly else { return true }
+            if !t.launched {
+                let s = body.scale
+                let dx = (f.pos.x - body.pos.x).clamped(-body.maxJumpAcross * 0.6, body.maxJumpAcross * 0.6)
+                let dy = (f.pos.y - body.pos.y - 30 * s).clamped(10 * s, body.maxJumpUp * 0.7)
+                body.launch(to: CGPoint(x: body.pos.x + dx, y: body.pos.y + dy), lift: 14 * s)
+                t.launched = true
+                return false
+            }
+            return body.isGrounded
+
+        case .flyOutcome:
+            guard let f = fly else { return true }
+            let s = body.scale
+            let head = CGPoint(x: body.pos.x + body.facing * 25 * s, y: body.pos.y + 40 * s)
+            if f.pos.distance(to: head) < 80 * s && Double.random(in: 0..<1) < 0.55 {
+                fly = nil
+                out?.emit(.sparkle)
+                out?.play(.trill)
+                out?.sayText(["Proteine.", "Presa. Ovviamente.", "Gnam.", "Un'altra, grazie."].randomElement()!)
+                followUps = [Task.hold(.sit, 1.5...2.5, .happy, .lick), Task.hold(.groom, 2...3, .relaxed, .lick)]
+            } else {
+                f.flee(from: body.pos)
+                out?.emit(.anger)
+                out?.sayText(["Era lenta. Io di più.", "La prossima è mia.", "L'ho lasciata andare. Apposta."].randomElement()!)
+                followUps = [Task.hold(.sit, 1.5...2.5, .annoyed)]
+            }
+            return true
         }
     }
 
@@ -379,6 +525,15 @@ final class Brain {
                     walkAway()
                     return
                 }
+                // The classic: a belly offered is a trap, about half the time.
+                if case .hold(.belly, _, _)? = queue.first?.kind, Bool.random() {
+                    pettingTime = -2.5
+                    wasPetted = false
+                    anim.startle()
+                    queue = [Task(kind: .particle(.anger)), Task.hold(.hiss, 0.5...0.7, .annoyed), Task(kind: .text("Era una trappola.")),
+                             Task.hold(.sit, 1.5...2.5, .happy, .lick)]
+                    return
+                }
                 if !isAsleep { queue = [Task.hold(.sit, 60...60, .happy)] }
             }
             if isPetted { needs.petted(Double(dt)) }
@@ -397,6 +552,10 @@ final class Brain {
     // MARK: Decisions
 
     private func decide(_ world: World) {
+        if time < playUntil, goal == nil {
+            planPlay(world)
+            return
+        }
         if var g = goal {
             guard let target = g.target() else { goal = nil; return }
             if body.pos.distance(to: target) < g.radius || g.steps > 10 || time > g.deadline {
@@ -447,6 +606,28 @@ final class Brain {
         if n.loneliness > 0.7 && !userAway {
             options.append((1.2 * n.loneliness, { self.planAsk(.idle) }))
         }
+        options.append((0.18 * n.boredom * n.energy * live, {
+            self.queue = [Task(kind: .spin, duration: .random(in: 2.2...3.6)), Task(kind: .particle(.question)),
+                          Task.hold(.sit, 1...1.6, .relaxed), Task(kind: .text("Era la mia coda. Lo sapevo."))]
+        }))
+        options.append((0.25 + n.loneliness * 0.4, { self.queue = [Task.hold(.belly, 4...9, .happy)] }))
+        if let spot = scratchSpot(world) {
+            options.append((0.3, {
+                self.queue = [Task(kind: .walk(x: spot.x, gait: .walk)), Task(kind: .face(spot.wallX)),
+                              Task.hold(.scratch, 2.5...4, .happy, .knead), Task.hold(.sit, 1...2, .happy)]
+            }))
+        }
+        if time - lastFly > 300 {
+            options.append((0.35 * n.boredom * live, { self.planFlyHunt() }))
+        }
+        if let m = Navigator.menuBarHang(for: body, in: world) {
+            options.append((0.5 * n.curiosity * n.energy * live, {
+                self.queue = [Task(kind: .walk(x: m.takeoffX, gait: .walk)), Task(kind: .jump(m))]
+            }))
+        }
+        if onWindow, time - lastLights > 240, lightsSpot(world) != nil {
+            options.append((0.7 * n.boredom * n.energy + 0.1, { self.planTrafficLights(world) }))
+        }
         if mischiefAllowed, onWindow, n.boredom > 0.45, time - lastMischief > 900, out?.canNudge == true {
             options.append((0.35, { self.planMischief(world) }))
         }
@@ -470,6 +651,13 @@ final class Brain {
             if r <= 0 { act(); return }
         }
         options.last?.1()
+    }
+
+    /// How likely a jump up is to fall short: tired cats and wild cats misjudge more.
+    private var missChance: Double {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let wild = Circadian.isZoomiesHour(hour) ? 0.08 : 0
+        return min(0.32, 0.09 + (1 - needs.energy) * 0.14 + wild)
     }
 
     private func isCursorHuntable(_ world: World) -> Bool {
@@ -581,6 +769,63 @@ final class Brain {
                  Task.hold(.sit, 2...4, .happy)]
     }
 
+    /// A window side reaching down to the cat's ledge: something to sharpen claws on.
+    private func scratchSpot(_ world: World) -> (x: CGFloat, wallX: CGFloat)? {
+        guard let l = body.currentLedge(world) else { return nil }
+        let s = body.scale
+        for w in world.walls where w.span.lo <= l.y + 30 * s && w.span.hi > l.y + 70 * s && w.windowID != body.windowUnderneath {
+            let x = w.side == .left ? w.x - 14 * s : w.x + 14 * s
+            if l.span.contains(x, margin: -8 * s) && abs(x - body.pos.x) < 500 * s { return (x, w.x) }
+        }
+        return nil
+    }
+
+    private func planFlyHunt() {
+        let s = body.scale
+        lastFly = time
+        fly = Fly(home: CGPoint(x: body.pos.x + body.facing * 90 * s, y: body.pos.y + 75 * s), scale: s)
+        queue = [Task(kind: .watchFly, duration: .random(in: 2.5...4.5)), Task(kind: .sound(.chatter)),
+                 Task(kind: .pounceFly), Task(kind: .flyOutcome)]
+    }
+
+    /// Someone is waving the pointer: hunt it, chase it along the ledge, bat at it.
+    private func planPlay(_ world: World) {
+        guard let c = out?.cursor else { return }
+        let s = body.scale
+        let d = c.distance(to: body.pos)
+        if d < 60 * s {
+            queue = [Task(kind: .face(c.x)), Task.hold(.wave, 0.5...0.9, .stalking, .wavePaw)]
+        } else if isCursorHuntable(world) {
+            queue = [Task(kind: .stalk, duration: .random(in: 0.35...0.8))]
+        } else {
+            goal = Goal(target: { [weak self] in self?.out?.cursor }, gait: .run, radius: 160 * s,
+                        onArrive: { [Task(kind: .stalk, duration: .random(in: 0.3...0.6))] }, deadline: time + 6)
+        }
+    }
+
+    /// Where to sit to bat at the window buttons, top left of the window it stands on.
+    private func lightsSpot(_ world: World) -> CGFloat? {
+        guard let id = body.windowUnderneath, let w = world.window(id), let l = body.currentLedge(world) else { return nil }
+        let x = w.frame.minX + 40 + 17 * body.scale
+        return l.span.contains(x) ? x : nil
+    }
+
+    private func planTrafficLights(_ world: World) {
+        guard let x = lightsSpot(world), let id = body.windowUnderneath, let w = world.window(id) else { return }
+        lastLights = time
+        queue = [Task(kind: .walk(x: x, gait: .walk)), Task(kind: .face(w.frame.minX)),
+                 Task.hold(.paw, 0.8...1.2, .stalking), Task(kind: .sound(.chatter)),
+                 Task.hold(.paw, 2...3.5, .stalking, [.wavePaw, .wiggle])]
+        // With mischief on, once in a long while the paw lands on the yellow button.
+        if mischiefAllowed, out?.canNudge == true, time - lastMinimize > 2700, Int.random(in: 0..<4) == 0 {
+            lastMinimize = time
+            queue.append(Task(kind: .minimize(window: id)))
+            queue.append(Task(kind: .say(.mischief)))
+        } else {
+            queue.append(Task.hold(.sit, 1.5...3, .annoyed, .lick))
+        }
+    }
+
     private func walkAway() {
         guard let c = out?.cursor else { return }
         let x = body.pos.x + (body.pos.x > c.x ? 1 : -1) * 300 * body.scale
@@ -636,12 +881,12 @@ final class Brain {
             out?.play(.trill)
 
         case .praised:
-            queue = [Task(kind: .sound(.trill)), Task.hold(.sit, 2...3, .happy, .purr)]
+            queue = [Task(kind: .particle(.sparkle)), Task(kind: .sound(.trill)), Task.hold(.sit, 2...3, .happy, .purr)]
             if Bool.random() { queue.append(Task(kind: .say(.praised))) }
 
         case .scolded:
             needs.offended(0.1)
-            queue = [Task.hold(.sit, 1...1.5, .annoyed), Task(kind: .say(.scolded))]
+            queue = [Task(kind: .particle(.sweat)), Task.hold(.sit, 1...1.5, .annoyed), Task(kind: .say(.scolded))]
             walkAway()
 
         case .getDown:
@@ -672,7 +917,7 @@ final class Brain {
         case .dog:
             anim.startle()
             goal = nil
-            queue = [Task(kind: .sound(.hiss)), Task.hold(.hiss, 1.8...2.6, .angry)]
+            queue = [Task(kind: .particle(.anger)), Task(kind: .sound(.hiss)), Task.hold(.hiss, 1.8...2.6, .angry)]
             if Bool.random() { queue.append(Task(kind: .say(.dog))) }
 
         case .otherCat:
@@ -725,7 +970,7 @@ final class Brain {
             queue = [Task.hold(.stretch, 1.4...2, .happy), Task.hold(.sit, 1...1.3, .relaxed, .yawn), Task(kind: .say(.wake))]
 
         case .hotMac(let hot):
-            if hot && !macIsHot { queue = [Task(kind: .say(.hotMac)), Task.hold(.flat, 20...40, .relaxed)] }
+            if hot && !macIsHot { queue = [Task(kind: .particle(.sweat)), Task(kind: .say(.hotMac)), Task.hold(.flat, 20...40, .relaxed)] }
             macIsHot = hot
 
         case .lowBattery:
@@ -768,12 +1013,44 @@ final class Brain {
             out?.sayText("Sono qui.")
 
         case .clicked:
+            clickTimes.append(time)
+            clickTimes.removeAll { time - $0 > 2.5 }
+            let c = out?.cursor ?? body.pos
+            if clickTimes.count >= 4 {
+                // Enough.
+                clickTimes.removeAll()
+                needs.offended(0.12)
+                anim.startle()
+                queue = [Task(kind: .particle(.anger)), Task(kind: .sound(.hiss)), Task.hold(.hiss, 0.6...0.9, .angry),
+                         Task(kind: .text(["Basta cliccare.", "Non sono un bottone.", "Ancora un clic e ti graffio."].randomElement()!))]
+                walkAway()
+                return
+            }
             if isAsleep {
                 anim.startle()
-            } else {
-                anim.lookAt = out?.cursor
                 out?.emit(.question)
+                if clickTimes.count >= 2 { queue = wakeUpFirst() + [Task.hold(.sit, 1...2, .annoyed)] }
+                return
             }
+            guard body.isGrounded else { return }
+            let reactions: [[Task]] = [
+                [Task(kind: .particle(.question)), Task(kind: .face(c.x)), Task.hold(.lookUp, 1...1.6, .alert)],
+                [Task(kind: .face(c.x)), Task(kind: .sound(.trill)), Task.hold(.stand, 0.6...0.9, .happy, .purr),
+                 Task(kind: .particle(.heart))],
+                [Task(kind: .sound(.trill)), Task.hold(.belly, 2.5...4.5, .happy)],
+                [Task(kind: .face(c.x)), Task(kind: .hop(380)), Task.hold(.crouch, 0.5...0.8, .stalking, .wiggle)],
+                [Task(kind: .face(c.x)), Task.hold(.wave, 0.8...1.2, .stalking, .wavePaw)],
+                [Task(kind: .sound(.meow)), Task.hold(.sit, 1...1.4, .happy, .meow)],
+            ]
+            queue = reactions.randomElement()!
+            playUntil = max(playUntil, time + 3)
+
+        case .playing:
+            if isAsleep && Int.random(in: 0..<3) != 0 { anim.startle(); return }
+            if playUntil < time { out?.emit(.bang) }
+            playUntil = time + 8
+            needs.boredom = max(0, needs.boredom - 0.02)
+            if goal == nil, case .hold? = queue.first?.kind { queue = wakeUpFirst() }
 
         case .doubleClicked:
             out?.play(needs.hunger > 0.6 ? .demand : .meow)
@@ -796,6 +1073,7 @@ final class Brain {
     private func startle(hiss: Bool) {
         anim.startle()
         out?.emit(.bang)
+        out?.emit(.sweat)
         goal = nil
         guard body.isGrounded else { return }
         let wasAsleep = isAsleep

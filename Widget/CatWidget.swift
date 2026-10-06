@@ -28,7 +28,8 @@ struct CatWidgetView: View {
         let s = entry.snapshot
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                if let img = CatRig.image(s.sleeping ? .sleep : .sit, size: 160, glow: 1) {
+                if let img = CatRig.image(s.sleeping ? .sleep : .sit, size: 160, glow: 1,
+                                          coat: CatCoat.named(s.coat ?? CatCoat.black.id), comic: s.comic ?? false) {
                     Image(decorative: img, scale: 2)
                         .resizable()
                         .scaledToFit()

@@ -21,6 +21,8 @@ enum SharedStore {
         var happiness: Double
         var playfulness: Double
         var updated: Date
+        var coat: String? = nil
+        var comic: Bool? = nil
 
         static let placeholder = Snapshot(name: "Nerone", status: "Si gode il desktop", sleeping: false,
                                           fullness: 0.7, energy: 0.8, happiness: 0.6, playfulness: 0.5, updated: .now)

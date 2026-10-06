@@ -8,6 +8,10 @@ protocol MenuBarActions: AnyObject {
     var isAsleep: Bool { get }
     var size: CatSize { get }
     var soundOn: Bool { get }
+    var coatID: String { get }
+    var comicOn: Bool { get }
+    func setCoat(_ id: String)
+    func toggleComic()
     func feed()
     func call()
     func find()
@@ -63,6 +67,26 @@ final class MenuBar: NSObject, NSMenuDelegate {
         }
         sizeItem.submenu = sub
         menu.addItem(sizeItem)
+
+        let coatItem = NSMenuItem(title: "Tipo di gatto", action: nil, keyEquivalent: "")
+        let coats = NSMenu()
+        for c in CatCoat.all {
+            let i = NSMenuItem(title: c.name, action: #selector(pickCoat(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = c.id
+            i.state = a.coatID == c.id ? .on : .off
+            if let cg = CatRig.image(.sit, size: 40, glow: 0.5, coat: c, comic: a.comicOn) {
+                i.image = NSImage(cgImage: cg, size: CGSize(width: 20, height: 20))
+            }
+            coats.addItem(i)
+        }
+        coats.addItem(.separator())
+        let comic = NSMenuItem(title: "Stile fumetto", action: #selector(toggleComic), keyEquivalent: "")
+        comic.target = self
+        comic.state = a.comicOn ? .on : .off
+        coats.addItem(comic)
+        coatItem.submenu = coats
+        menu.addItem(coatItem)
         let sound = add("Miagolii e fusa", #selector(toggleSound), "")
         sound.state = a.soundOn ? .on : .off
         add(a.isOutside ? "Fallo rientrare" : "Mandalo in giardino", #selector(toggleOutside), "", symbol: a.isOutside ? "house" : "leaf")
@@ -91,6 +115,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
     @objc private func toggleOutside() { actions?.toggleOutside() }
     @objc private func settings() { actions?.openSettings() }
     @objc private func about() { actions?.openAbout() }
+    @objc private func toggleComic() { actions?.toggleComic() }
+    @objc private func pickCoat(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { actions?.setCoat(id) }
+    }
     @objc private func pickSize(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? String, let s = CatSize(rawValue: raw) { actions?.setSize(s) }
     }

@@ -35,6 +35,25 @@ enum WindowNudger {
         }
     }
 
+    /// Sends a window to the Dock, as if a paw had landed on the yellow button. Never closes anything.
+    static func minimize(_ w: WindowInfo) {
+        guard isTrusted, let win = axWindow(for: w) else { return }
+        AXUIElementSetAttributeValue(win, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+    }
+
+    private static func axWindow(for w: WindowInfo) -> AXUIElement? {
+        guard let primary = NSScreen.screens.first else { return nil }
+        let want = ScreenSpace.quartzRect(fromCocoa: w.frame, primaryHeight: primary.frame.height)
+        let app = AXUIElementCreateApplication(w.pid)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return nil }
+        return windows.first { win in
+            guard let o = point(win, kAXPositionAttribute), let s = size(win) else { return false }
+            return abs(o.x - want.minX) < 4 && abs(o.y - want.minY) < 4 && abs(s.width - want.width) < 4 && abs(s.height - want.height) < 4
+        }
+    }
+
     private static func point(_ e: AXUIElement, _ attr: String) -> CGPoint? {
         var v: CFTypeRef?
         guard AXUIElementCopyAttributeValue(e, attr as CFString, &v) == .success, let v,

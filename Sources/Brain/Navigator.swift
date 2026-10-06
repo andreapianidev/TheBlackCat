@@ -8,6 +8,8 @@ struct Move {
     /// Where the cat ends up once the move is complete (top of the wall for a climb).
     var arrival: CGPoint
     var targetWindow: UInt32?
+    /// Set when the move ends hanging from an edge instead of standing on it.
+    var hang: (UInt32?, CGFloat)? = nil
 }
 
 @MainActor
@@ -49,6 +51,18 @@ enum Navigator {
                             arrival: CGPoint(x: cornerX, y: w.frame.maxY), targetWindow: wall.windowID))
         }
         return out
+    }
+
+    /// A leap up to hang from the bottom of the menu bar, if it is within reach.
+    static func menuBarHang(for body: CatBody, in world: World) -> Move? {
+        guard let here = body.currentLedge(world), here.screen < world.screens.count else { return nil }
+        let s = body.scale
+        let top = world.screens[here.screen].visible.maxY
+        let rise = top - here.y
+        guard rise > 70 * s, rise < body.maxJumpUp * 1.05 else { return nil }
+        let x = here.span.clamp(body.pos.x + body.facing * 30 * s, inset: 12 * s)
+        let p = CGPoint(x: x, y: top)
+        return Move(takeoffX: x, target: p, grab: nil, arrival: p, targetWindow: nil, hang: (nil, top))
     }
 
     /// The best next step toward a goal: walking on this ledge or a move. Nil when stuck.

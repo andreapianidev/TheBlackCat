@@ -1,12 +1,15 @@
 import Foundation
 import FoundationModels
 
-/// Gives the cat something to say. Uses the on device Apple Intelligence model
-/// when it is available and allowed, the hand written lines otherwise.
+/// Gives the cat something to say. Uses Agnes in the cloud when chosen and a key
+/// is present, the on device Apple Intelligence model when it is available and
+/// allowed, the hand written lines otherwise.
 @MainActor
 final class ThoughtEngine {
     var useModel = true
+    var cloud = false
     var name = "Nerone"
+    var adjective = "nero"
 
     private var lastSaid = Date.distantPast
     private var recent: [String] = []
@@ -21,6 +24,12 @@ final class ThoughtEngine {
         case .unavailable: return "Non disponibili"
         }
     }
+
+    var cloudStatus: String {
+        AgnesKey.load() != nil ? "Agnes: chiave presente" : "Agnes: manca la chiave"
+    }
+
+    private var cloudReady: Bool { cloud && AgnesKey.load() != nil }
 
     var modelAvailable: Bool {
         if case .available = SystemLanguageModel.default.availability { return true }
@@ -39,7 +48,7 @@ final class ThoughtEngine {
         guard force || Date().timeIntervalSince(lastSaid) > 20 else { return }
         lastSaid = Date()
         let canned = pick(topic)
-        guard useModel, modelAvailable, !busy, !isReflex(topic) else { deliver(canned); return }
+        guard cloudReady || (useModel && modelAvailable), !busy, !isReflex(topic) else { deliver(canned); return }
         busy = true
         Task { [weak self] in
             let text = await self?.generate(topic, context: context)
@@ -66,7 +75,7 @@ final class ThoughtEngine {
 
     private func generate(_ topic: ThoughtTopic, context: String) async -> String? {
         let instructions = """
-        Sei \(name), un gatto nero che vive sul desktop di un Mac. Scrivi un solo pensiero, \
+        Sei \(name), un gatto \(adjective) che vive sul desktop di un Mac. Scrivi un solo pensiero, \
         in prima persona, in italiano, al massimo dodici parole. Tono ironico, altezzoso, \
         affettuoso sotto sotto. Mai volgare, mai cattivo. Niente emoji, niente virgolette, \
         niente trattini lunghi. Solo il pensiero, nient'altro.
@@ -78,6 +87,12 @@ final class ThoughtEngine {
         Esempi di tono: \(examples)
         Pensiero nuovo:
         """
+        if cloudReady,
+           let raw = try? await AgnesClient.chat(system: instructions, user: prompt),
+           let line = ThoughtBank.clean(raw) {
+            return line
+        }
+        guard useModel, modelAvailable else { return nil }
         do {
             let session = LanguageModelSession(instructions: instructions)
             let r = try await session.respond(to: prompt, options: GenerationOptions(temperature: 1.0, maximumResponseTokens: 50))

@@ -39,10 +39,14 @@ final class CatSettings: ObservableObject {
     @Published var mischief: Bool { didSet { d.set(mischief, forKey: "mischief") } }
     @Published var paused: Bool { didSet { d.set(paused, forKey: "paused") } }
     @Published var onboarded: Bool { didSet { d.set(onboarded, forKey: "onboarded") } }
+    @Published var coat: String { didSet { d.set(coat, forKey: "coat") } }
+    @Published var comic: Bool { didSet { d.set(comic, forKey: "comic") } }
+    @Published var brain: String { didSet { d.set(brain, forKey: "brain") } }
+    @Published var agnesVision: Bool { didSet { d.set(agnesVision, forKey: "agnesVision") } }
 
     init() {
         d.register(defaults: ["name": "Nerone", "size": CatSize.medium.rawValue, "sound": true, "volume": 0.5,
-                              "thoughts": true, "aiThoughts": true])
+                              "thoughts": true, "aiThoughts": true, "brain": "apple", "agnesVision": false])
         name = d.string(forKey: "name") ?? "Nerone"
         size = CatSize(rawValue: d.string(forKey: "size") ?? "") ?? .medium
         sound = d.bool(forKey: "sound")
@@ -58,6 +62,10 @@ final class CatSettings: ObservableObject {
         mischief = d.bool(forKey: "mischief")
         paused = d.bool(forKey: "paused")
         onboarded = d.bool(forKey: "onboarded")
+        coat = d.string(forKey: "coat") ?? CatCoat.black.id
+        comic = d.bool(forKey: "comic")
+        brain = d.string(forKey: "brain") ?? "apple"
+        agnesVision = d.bool(forKey: "agnesVision")
     }
 }
 

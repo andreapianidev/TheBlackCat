@@ -12,6 +12,9 @@ final class CatController: NSObject {
     private let anim = Animator()
     private let brain: Brain
     private var world = World()
+    private var windows: [WindowInfo] = []
+    private var screens: [ScreenInfo] = []
+    private var trackTimer: Timer?
 
     private let panel: FloatingPanel
     private let view = CatView()
@@ -36,7 +39,6 @@ final class CatController: NSObject {
     private var scanTimer: Timer?
     private var slowTimer: Timer?
     private var scanInterval: TimeInterval = 0
-    private var asleepRate = false
     private var cancellables: Set<AnyCancellable> = []
 
     private var dragging = false
@@ -48,15 +50,20 @@ final class CatController: NSObject {
     private var lastWidgetReload = Date.distantPast
     private var lastSpontaneous = Date()
 
-    private var panelSize: CGSize { CGSize(width: 260 * body.scale, height: 260 * body.scale) }
-    private var anchorInPanel: CGPoint { CGPoint(x: panelSize.width / 2, y: panelSize.height * 0.38) }
+    private var panelSize: CGSize { CGSize(width: 210 * body.scale, height: 250 * body.scale) }
+    private var anchorInPanel: CGPoint { CGPoint(x: panelSize.width / 2, y: panelSize.height * 0.42) }
+    private var nextSpeedLine: CGFloat = 0
+    private var cursorTrail: [(CGPoint, CFTimeInterval)] = []
+    private var lastPlayPing: CFTimeInterval = 0
+    private enum Pace { case asleep, idle, active, fast }
+    private var pace = Pace.active
 
     init(settings: CatSettings) {
         self.settings = settings
         let scale = settings.size.scale
         body = CatBody(pos: .zero, footing: .floor(screen: 0), scale: scale)
         brain = Brain(body: body, anim: anim)
-        panel = FloatingPanel(size: CGSize(width: 260 * scale, height: 260 * scale))
+        panel = FloatingPanel(size: CGSize(width: 210 * scale, height: 250 * scale))
         super.init()
         brain.out = self
         brain.needs = memory.needs
@@ -73,7 +80,7 @@ final class CatController: NSObject {
     func start() {
         _ = menuBar
         updateDarkness()
-        world = WindowScanner.world(scale: body.scale)
+        fullScan()
         let first = !settings.onboarded
         if let main = world.screens.first {
             let floor = main.visible
@@ -86,8 +93,11 @@ final class CatController: NSObject {
         let link = view.displayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
-        setFrameRate(asleep: false)
-        setScanInterval(0.12)
+        setPace(.active)
+        trackTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.trackWindowUnderCat() }
+        }
+        trackTimer?.tolerance = 0.02
         slowTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.slowTick() }
         }
@@ -114,20 +124,44 @@ final class CatController: NSObject {
         scanInterval = t
         scanTimer?.invalidate()
         scanTimer = Timer.scheduledTimer(withTimeInterval: t, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.world = WindowScanner.world(scale: self.body.scale)
-            }
+            Task { @MainActor in self?.fullScan() }
         }
         scanTimer?.tolerance = t * 0.3
     }
 
-    private func setFrameRate(asleep: Bool) {
-        asleepRate = asleep
+    /// All windows, every few tenths of a second. It is the expensive call, so it runs slowly.
+    private func fullScan() {
+        windows = WindowScanner.windows()
+        screens = WindowScanner.screens()
+        rebuildWorld()
+    }
+
+    private func rebuildWorld() {
+        world = WorldBuilder.build(windows: windows, screens: screens, clearance: 8, minPiece: 46 * body.scale)
+    }
+
+    /// Between full scans, only the window under the cat is followed, so it rides a dragged window smoothly.
+    private func trackWindowUnderCat() {
+        guard let id = body.windowUnderneath, let i = windows.firstIndex(where: { $0.id == id }) else { return }
+        if let f = WindowScanner.frame(of: id) {
+            if f != windows[i].frame { windows[i].frame = f; rebuildWorld() }
+        } else {
+            windows.remove(at: i)
+            rebuildWorld()
+        }
+    }
+
+    /// 60 frames a second only while something moves; a resting cat breathes at 30, a sleeping one at 12.
+    private func setPace(_ p: Pace) {
+        pace = p
         let lowPower = brain.lowPower
-        link?.preferredFrameRateRange = asleep
-            ? CAFrameRateRange(minimum: 8, maximum: 15, preferred: 12)
-            : CAFrameRateRange(minimum: 30, maximum: lowPower ? 30 : 60, preferred: lowPower ? 30 : 60)
+        switch p {
+        case .asleep: link?.preferredFrameRateRange = CAFrameRateRange(minimum: 8, maximum: 15, preferred: 12)
+        case .idle: link?.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 24, preferred: lowPower ? 15 : 20)
+        case .active: link?.preferredFrameRateRange = CAFrameRateRange(minimum: 24, maximum: 30, preferred: 30)
+        case .fast: link?.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: lowPower ? 30 : 60, preferred: lowPower ? 30 : 60)
+        }
+        setScanInterval(p == .asleep ? 1.5 : (p == .idle ? 0.6 : 0.3))
     }
 
     // MARK: Frame
@@ -140,9 +174,11 @@ final class CatController: NSObject {
 
         let mouse = NSEvent.mouseLocation
         if mouse != lastMouse { lastMouse = mouse; lastMouseMove = now }
+        detectPlay(mouse, now: now)
 
         if !dragging, let e = body.update(dt, world: world) {
             brain.bodyEvent(e)
+            if case .landed(let speed) = e, speed > 450 { emit(.dust) }
         }
 
         // Petting: the pointer resting on the cat and moving now and then.
@@ -168,16 +204,54 @@ final class CatController: NSObject {
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
         view.anchor = CGPoint(x: body.pos.x - origin.x, y: body.pos.y - origin.y)
         view.frameToDraw = frame
-        view.needsDisplay = true
+        view.fly = brain.fly.map { ($0.pos, $0.wingsUp) }
+        view.render()
         let ignore = !(over || dragging)
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
 
         if bubble.visible { bubble.place(above: headPoint(frame)) }
 
-        let asleep = brain.isAsleep && !brain.isPetted
-        if asleep != asleepRate {
-            setFrameRate(asleep: asleep)
-            setScanInterval(asleep ? 0.5 : 0.12)
+        // Speed lines behind a running cat, in the comic style.
+        if settings.comic && body.isGrounded && body.groundSpeed > 150 * body.scale {
+            nextSpeedLine -= dt
+            if nextSpeedLine <= 0 {
+                nextSpeedLine = 0.06
+                let p = CGPoint(x: body.pos.x - body.facing * 30 * body.scale, y: body.pos.y + .random(in: 8...36) * body.scale)
+                particles.emit(.speed, at: p, scale: body.scale, facing: body.facing)
+            }
+        }
+
+        // 60 frames only for fast motion; walking reads fine at 30, resting at 20, sleep at 12.
+        let fast = dragging || !body.isGrounded || body.groundSpeed > 150 * body.scale
+        let moving = body.groundSpeed > 1 || !particles.isCalm || brain.isPetted || brain.fly != nil
+        let next: Pace = fast ? .fast : (brain.isAsleep && !brain.isPetted ? .asleep : (moving ? .active : .idle))
+        if next != pace { setPace(next) }
+    }
+
+    /// A pointer waved quickly back and forth near the cat is an invitation to play.
+    private func detectPlay(_ mouse: CGPoint, now: CFTimeInterval) {
+        cursorTrail.append((mouse, now))
+        cursorTrail.removeAll { now - $0.1 > 1.2 }
+        guard now - lastPlayPing > 1, cursorTrail.count > 8, !dragging,
+              mouse.distance(to: body.pos) < 450 * body.scale else { return }
+        var length: CGFloat = 0
+        var turns = 0
+        var lastSign: CGFloat = 0
+        for i in 1..<cursorTrail.count {
+            let dx = cursorTrail[i].0.x - cursorTrail[i - 1].0.x
+            let dy = cursorTrail[i].0.y - cursorTrail[i - 1].0.y
+            length += hypot(dx, dy)
+            let main = abs(dx) > abs(dy) ? dx : dy
+            if abs(main) > 3 {
+                let sign: CGFloat = main > 0 ? 1 : -1
+                if lastSign != 0 && sign != lastSign { turns += 1 }
+                lastSign = sign
+            }
+        }
+        let span = CGFloat(max(cursorTrail.last!.1 - cursorTrail.first!.1, 0.1))
+        if length / span > 550 && turns >= 3 {
+            lastPlayPing = now
+            brain.react(.playing)
         }
     }
 
@@ -246,7 +320,8 @@ final class CatController: NSObject {
         let n = brain.needs
         SharedStore.save(.init(name: settings.name, status: settings.paused ? "È in giardino" : brain.status,
                                sleeping: brain.isAsleep, fullness: 1 - n.hunger, energy: n.energy,
-                               happiness: 1 - n.loneliness * 0.6 - n.grudge * 0.4, playfulness: n.boredom, updated: Date()))
+                               happiness: 1 - n.loneliness * 0.6 - n.grudge * 0.4, playfulness: n.boredom, updated: Date(),
+                               coat: settings.coat, comic: settings.comic))
         if Date().timeIntervalSince(lastWidgetReload) > 300 {
             lastWidgetReload = Date()
             WidgetCenter.shared.reloadAllTimelines()
@@ -260,10 +335,27 @@ final class CatController: NSObject {
             guard let self else { return }
             self.body.scale = s.scale
             self.resizePanel()
+            self.rebuildWorld()
         }.store(in: &cancellables)
         settings.$sound.sink { [weak self] on in self?.voice.enabled = on }.store(in: &cancellables)
         settings.$volume.sink { [weak self] v in self?.voice.volume = Float(v) }.store(in: &cancellables)
         settings.$name.sink { [weak self] n in self?.thoughts.name = n; self?.hearing.name = n }.store(in: &cancellables)
+        settings.$coat.sink { [weak self] id in
+            guard let self else { return }
+            let coat = CatCoat.named(id)
+            let changed = self.anim.coat != coat
+            self.anim.coat = coat
+            self.thoughts.adjective = coat.adjective
+            if changed { self.emit(.ring); self.emit(.sparkle) }
+        }.store(in: &cancellables)
+        settings.$comic.sink { [weak self] on in
+            guard let self else { return }
+            let changed = self.anim.comic != on
+            self.anim.comic = on
+            if changed { self.emit(.ring) }
+        }.store(in: &cancellables)
+        settings.$brain.sink { [weak self] b in self?.thoughts.cloud = b == "agnes" }.store(in: &cancellables)
+        settings.$agnesVision.sink { [weak self] on in self?.screenEyes.agnesVision = on }.store(in: &cancellables)
         settings.$aiThoughts.sink { [weak self] on in self?.thoughts.useModel = on }.store(in: &cancellables)
         settings.$sight.sink { [weak self] on in on ? self?.sight.start() : self?.sight.stop() }.store(in: &cancellables)
         settings.$hearing.sink { [weak self] on in on ? self?.hearing.start() : self?.hearing.stop() }.store(in: &cancellables)
@@ -288,6 +380,10 @@ final class CatController: NSObject {
         hearing.onEvent = { [weak self] e in self?.brain.react(e) }
         screenEyes.onEvent = { [weak self] e in self?.brain.react(e) }
         screenEyes.catPosition = { [weak self] in self?.body.pos ?? .zero }
+        screenEyes.onThought = { [weak self] text in
+            guard let self, self.settings.thoughts else { return }
+            self.sayText(text)
+        }
         screenEyes.shouldLook = { [weak self] in
             guard let self else { return false }
             return !self.brain.isAsleep && self.brain.needs.curiosity > 0.3 && !self.settings.paused
@@ -296,11 +392,11 @@ final class CatController: NSObject {
         system.onLowPower = { [weak self] low in
             guard let self else { return }
             self.brain.lowPower = low
-            self.setFrameRate(asleep: self.asleepRate)
+            self.setPace(self.pace)
         }
         system.onScreensChanged = { [weak self] in
             guard let self else { return }
-            self.world = WindowScanner.world(scale: self.body.scale)
+            self.fullScan()
         }
         system.start()
         weather.onWeather = { [weak self] mood, _ in self?.brain.react(.weather(mood)) }
@@ -331,7 +427,7 @@ final class CatController: NSObject {
     }
 
     private func comeBackInside() {
-        world = WindowScanner.world(scale: body.scale)
+        fullScan()
         guard let main = world.screens.first else { return }
         let floor = main.visible
         let fromRight = Bool.random()
@@ -357,13 +453,13 @@ extension CatController: BrainOutput {
         }
         thoughts.think(topic, context: thoughtContext(), force: force) { [weak self] text in
             guard let self, let f = self.anim.lastFrame else { return }
-            self.bubble.show(text, above: self.headPoint(f))
+            self.bubble.show(text, above: self.headPoint(f), comic: self.settings.comic)
         }
     }
 
     func sayText(_ text: String) {
         guard let f = anim.lastFrame, !settings.paused else { return }
-        bubble.show(text, above: headPoint(f))
+        bubble.show(text, above: headPoint(f), comic: settings.comic)
     }
 
     func play(_ sound: CatSound) {
@@ -379,8 +475,21 @@ extension CatController: BrainOutput {
 
     func emit(_ particle: ParticleKind) {
         guard let f = anim.lastFrame else { return }
-        let p = particle == .ring ? CGPoint(x: body.pos.x, y: body.pos.y + 25 * body.scale) : headPoint(f)
-        particles.emit(particle, at: p, scale: body.scale)
+        // Sweat, anger marks and speed lines belong to the comic style only.
+        if !settings.comic && [.sweat, .anger, .speed].contains(particle) { return }
+        let p: CGPoint
+        switch particle {
+        case .ring: p = CGPoint(x: body.pos.x, y: body.pos.y + 25 * body.scale)
+        case .dust: p = body.pos
+        case .sparkle: p = CGPoint(x: body.pos.x, y: body.pos.y + 40 * body.scale)
+        default: p = headPoint(f)
+        }
+        particles.emit(particle, at: p, scale: body.scale, facing: body.facing)
+    }
+
+    func minimize(window id: UInt32) {
+        guard canNudge, let w = world.window(id) else { return }
+        WindowNudger.minimize(w)
     }
 
     func nudge(window id: UInt32, dx: CGFloat) {
@@ -458,6 +567,10 @@ extension CatController: MenuBarActions {
     var isAsleep: Bool { brain.isAsleep }
     var size: CatSize { settings.size }
     var soundOn: Bool { settings.sound }
+    var coatID: String { settings.coat }
+    var comicOn: Bool { settings.comic }
+    func setCoat(_ id: String) { settings.coat = id }
+    func toggleComic() { settings.comic.toggle() }
 
     func feed() {
         if settings.paused { settings.paused = false }

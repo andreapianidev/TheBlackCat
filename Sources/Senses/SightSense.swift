@@ -40,6 +40,14 @@ final class SightSense: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private func configure() {
         guard let device = AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
+        // Five frames a second are plenty: less work for the camera and for Vision.
+        if (try? device.lockForConfiguration()) != nil {
+            if device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 5 }) {
+                device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 5)
+                device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 5)
+            }
+            device.unlockForConfiguration()
+        }
         session.beginConfiguration()
         session.sessionPreset = .low
         if session.canAddInput(input) { session.addInput(input) }
@@ -54,13 +62,15 @@ final class SightSense: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let now = CACurrentMediaTime()
-        guard now - lastRun > 0.33, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard now - lastRun > 0.5, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastRun = now
 
         let faces = VNDetectFaceRectanglesRequest()
         let hands = VNDetectHumanHandPoseRequest()
         hands.maximumHandCount = 1
-        try? VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform([faces, hands])
+        // Hands are the expensive request: only look for them when someone is there.
+        let lookForHands = now - lastFace < 3
+        try? VNImageRequestHandler(cvPixelBuffer: buffer, options: [:]).perform(lookForHands ? [faces, hands] : [faces])
 
         if !(faces.results ?? []).isEmpty { lastFace = now }
         let isPresent = now - lastFace < 3

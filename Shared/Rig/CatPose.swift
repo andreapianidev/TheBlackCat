@@ -4,6 +4,14 @@ import CoreGraphics
 enum PoseKind: String, Codable, CaseIterable {
     case stand, sit, loaf, sleep, flat, groom, stretch, crouch
     case airUp, airDown, hiss, dangle, eat, wave, lookUp, knead
+    /// Hanging by the front paws from an edge; the origin is the grip.
+    case hang
+    /// Sitting on an edge and reaching down with a paw.
+    case paw
+    /// On its back, paws in the air, head upside down.
+    case belly
+    /// Up on its hind legs against something, sharpening its claws.
+    case scratch
 }
 
 /// Every number that shapes the cat in one frame.
@@ -55,6 +63,30 @@ struct CatPose {
         switch kind {
         case .stand:
             break
+        case .hang:
+            p.head = CGPoint(x: 5, y: -9); p.headTilt = 0.25
+            p.chest = CGPoint(x: 2, y: -20); p.chestR = 9.5
+            p.hip = CGPoint(x: -1, y: -44); p.hipR = 10.5
+            feet((3, 0), (6, 0), (-2, -64), (2, -62))
+            p.pupil = 0.95; p.earBack = 0.35
+        case .belly:
+            p.hip = CGPoint(x: -14, y: 9); p.hipR = 11
+            p.chest = CGPoint(x: 10, y: 10); p.chestR = 10.5
+            p.head = CGPoint(x: 23, y: 10); p.headTilt = .pi * 0.92
+            feet((12, 27), (16, 24), (-15, 27), (-11, 24))
+            p.pupil = 0.8; p.eyeOpen = 0.7
+        case .scratch:
+            p.hip = CGPoint(x: -6, y: 16); p.hipR = 12
+            p.chest = CGPoint(x: 6, y: 38); p.chestR = 9.5
+            p.head = CGPoint(x: 9, y: 53); p.headTilt = 0.2
+            feet((18, 50), (17, 43), (0, 0), (-4, 0))
+            p.eyeOpen = 0.35
+        case .paw:
+            p.hip = CGPoint(x: -12, y: 13); p.hipR = 13.5
+            p.chest = CGPoint(x: 5, y: 32); p.chestR = 10
+            p.head = CGPoint(x: 12, y: 45); p.headTilt = -0.55
+            feet((17, -9), (6, 0), (2, 0), (-1, 0))
+            p.pupil = 1
         case .sit, .groom, .wave, .lookUp:
             p.hip = CGPoint(x: -12, y: 13); p.hipR = 13.5
             p.chest = CGPoint(x: 5, y: 32); p.chestR = 10

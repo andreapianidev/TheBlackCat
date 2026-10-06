@@ -18,6 +18,8 @@ enum Locomotion: Equatable {
     case grounded(Footing)
     case airborne
     case climbing(windowID: UInt32, side: WallSide, offsetY: CGFloat)
+    /// Hanging by the front paws from an edge: a window top, or the menu bar when `windowID` is nil.
+    case hanging(windowID: UInt32?, offsetX: CGFloat, edgeY: CGFloat)
     case dragged
 }
 
@@ -25,6 +27,7 @@ enum BodyEvent {
     case landed(speed: CGFloat)
     case startedFalling
     case grabbedWall
+    case grabbedEdge
     case mantled
 }
 
@@ -43,7 +46,7 @@ final class CatBody {
     /// Smoothed acceleration, for the tail.
     private(set) var accel = CGVector.zero
 
-    private var flight: (plan: JumpPlan, elapsed: CGFloat, grab: (UInt32, WallSide)?)?
+    private var flight: (plan: JumpPlan, elapsed: CGFloat, grab: (UInt32, WallSide)?, hang: (UInt32?, CGFloat)?)?
     private var lastPos: CGPoint
     private var lastVel = CGVector.zero
     private var dragSamples: [(CGPoint, TimeInterval)] = []
@@ -62,6 +65,7 @@ final class CatBody {
     var isGrounded: Bool { if case .grounded = loco { return true }; return false }
     var isAirborne: Bool { loco == .airborne }
     var isPlannedFlight: Bool { flight != nil }
+    var isHanging: Bool { if case .hanging = loco { return true }; return false }
 
     var footing: Footing? { if case .grounded(let f) = loco { return f }; return nil }
 
@@ -69,6 +73,7 @@ final class CatBody {
         switch loco {
         case .grounded(.window(let id, _)): return id
         case .climbing(let id, _, _): return id
+        case .hanging(let id, _, _): return id
         default: return nil
         }
     }
@@ -96,6 +101,17 @@ final class CatBody {
             } else {
                 fall()
                 event = .startedFalling
+            }
+        case .hanging(let id, let off, let edgeY):
+            if let id {
+                if let w = world.window(id) {
+                    pos = CGPoint(x: w.frame.minX + off, y: w.frame.maxY)
+                } else {
+                    fall()
+                    event = .startedFalling
+                }
+            } else {
+                pos = CGPoint(x: off, y: edgeY)
             }
         case .dragged:
             break
@@ -137,6 +153,18 @@ final class CatBody {
         if var f = flight {
             f.elapsed += dt
             flight = f
+            if let hang = f.hang, f.elapsed >= f.plan.duration {
+                flight = nil
+                vel = .zero
+                pos = f.plan.to
+                if let id = hang.0 {
+                    guard let w = world.window(id) else { fall(); return .startedFalling }
+                    loco = .hanging(windowID: id, offsetX: pos.x - w.frame.minX, edgeY: w.frame.maxY)
+                } else {
+                    loco = .hanging(windowID: nil, offsetX: pos.x, edgeY: hang.1)
+                }
+                return .grabbedEdge
+            }
             if let grab = f.grab, f.elapsed >= f.plan.duration {
                 flight = nil
                 if let w = world.window(grab.0),
@@ -161,7 +189,7 @@ final class CatBody {
         }
         if abs(vel.dx) > 30 { facing = vel.dx > 0 ? 1 : -1 }
 
-        if vel.dy <= 0, flight?.grab == nil, let l = world.landing(x: np.x, fromY: pos.y, toY: np.y) {
+        if vel.dy <= 0, flight?.grab == nil, flight?.hang == nil, let l = world.landing(x: np.x, fromY: pos.y, toY: np.y) {
             return land(on: l, x: np.x, world: world)
         }
         if let lowest = world.floors.map(\.y).min(), np.y < lowest - 40,
@@ -209,11 +237,11 @@ final class CatBody {
         if abs(x - pos.x) > 6 { facing = x > pos.x ? 1 : -1 }
     }
 
-    func launch(to target: CGPoint, grab: (UInt32, WallSide)? = nil, lift: CGFloat? = nil) {
+    func launch(to target: CGPoint, grab: (UInt32, WallSide)? = nil, hang: (UInt32?, CGFloat)? = nil, lift: CGFloat? = nil) {
         let l = lift ?? Ballistics.naturalLift(from: pos, to: target, scale: scale)
         let plan = Ballistics.plan(from: pos, to: target, gravity: gravity, lift: l)
         vel = plan.velocity
-        flight = (plan, 0, grab)
+        flight = (plan, 0, grab, hang)
         loco = .airborne
         facing = target.x >= pos.x ? 1 : -1
         if let g = grab { facing = g.1 == .left ? 1 : -1 }
@@ -225,6 +253,28 @@ final class CatBody {
         flight = nil
         loco = .airborne
         pos.y += 1
+    }
+
+    /// From hanging: hauls itself up onto the edge if there is one. Returns false if it cannot.
+    func pullUp(_ world: World) -> Bool {
+        guard case .hanging(let id?, let off, _) = loco, let w = world.window(id),
+              world.ledges.contains(where: { $0.windowID == id && $0.span.contains(w.frame.minX + off, margin: 4) })
+        else { return false }
+        pos = CGPoint(x: w.frame.minX + off, y: w.frame.maxY)
+        loco = .grounded(.window(id: id, offsetX: off))
+        return true
+    }
+
+    /// Loses its grip on a wall and drops away from it.
+    func slip() {
+        guard case .climbing(_, let side, _) = loco else { return }
+        hop(140 * scale, dx: (side == .left ? -1 : 1) * 110 * scale)
+    }
+
+    func letGo() {
+        loco = .airborne
+        flight = nil
+        vel = CGVector(dx: -facing * 40 * scale, dy: 0)
     }
 
     func fall() {

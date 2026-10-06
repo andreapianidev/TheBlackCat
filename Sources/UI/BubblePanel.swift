@@ -4,7 +4,7 @@ import SwiftUI
 /// The cat's thought bubble, in Liquid Glass, floating above its head.
 final class BubblePanel {
     private let panel = FloatingPanel(size: CGSize(width: 260, height: 80))
-    private let host = NSHostingView(rootView: BubbleView(text: ""))
+    private let host = NSHostingView(rootView: BubbleView(text: "", comic: false))
     private var hideWork: DispatchWorkItem?
     private(set) var visible = false
 
@@ -14,8 +14,8 @@ final class BubblePanel {
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
     }
 
-    func show(_ text: String, above head: CGPoint) {
-        host.rootView = BubbleView(text: text)
+    func show(_ text: String, above head: CGPoint, comic: Bool) {
+        host.rootView = BubbleView(text: text, comic: comic)
         let size = host.fittingSize
         panel.setContentSize(size)
         place(above: head)
@@ -51,17 +51,32 @@ final class BubblePanel {
 
 struct BubbleView: View {
     let text: String
+    let comic: Bool
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 230)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 8)
-            .glassEffect(.regular, in: .rect(cornerRadius: 15))
-            .padding(6)
+        if comic {
+            // A comic balloon: white, inked border, hand lettering in capitals.
+            Text(text.uppercased())
+                .font(.custom("Chalkboard SE", size: 12).weight(.bold))
+                .foregroundStyle(.black)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 220)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 16).fill(.white).stroke(.black, lineWidth: 2.2))
+                .padding(6)
+        } else {
+            Text(text)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 230)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: .rect(cornerRadius: 15))
+                .padding(6)
+        }
     }
 }
 

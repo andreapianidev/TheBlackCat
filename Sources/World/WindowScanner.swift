@@ -27,14 +27,34 @@ enum WindowScanner {
                   let number = d[kCGWindowNumber as String] as? UInt32
             else { continue }
             if let alpha = d[kCGWindowAlpha as String] as? Double, alpha < 0.05 { continue }
-            if bounds.width < 120 || bounds.height < 70 { continue }
+            // Small enough to include Stage Manager's thumbnails on the side of the screen.
+            if bounds.width < 60 || bounds.height < 50 { continue }
             let owner = d[kCGWindowOwnerName as String] as? String ?? ""
             if ignoredOwners.contains(owner) { continue }
+            let frame = ScreenSpace.cocoaRect(fromQuartz: bounds, primaryHeight: h)
+            // Stage Manager stacks a proxy and the app's own window on the same rectangle.
+            if out.contains(where: { $0.frame == frame }) { continue }
             out.append(WindowInfo(id: number,
-                                  frame: ScreenSpace.cocoaRect(fromQuartz: bounds, primaryHeight: h),
+                                  frame: frame,
                                   pid: pid, owner: owner))
         }
         return out
+    }
+
+    /// Where one window is right now, cheaply: used to follow the window under the cat
+    /// between full scans. Nil when the window is gone or hidden.
+    static func frame(of id: UInt32) -> CGRect? {
+        guard let primary = NSScreen.screens.first else { return nil }
+        let ids = UnsafeMutablePointer<UnsafeRawPointer?>.allocate(capacity: 1)
+        defer { ids.deallocate() }
+        ids[0] = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let array = CFArrayCreate(nil, ids, 1, nil),
+              let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]],
+              let d = list.first,
+              let b = d[kCGWindowBounds as String] as? NSDictionary,
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return nil }
+        if (d[kCGWindowIsOnscreen as String] as? Bool) == false { return nil }
+        return ScreenSpace.cocoaRect(fromQuartz: r, primaryHeight: primary.frame.height)
     }
 
     static func world(scale: CGFloat) -> World {
