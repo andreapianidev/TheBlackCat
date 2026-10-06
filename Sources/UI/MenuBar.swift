@@ -116,6 +116,11 @@ final class MenuBar: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Impostazioni e sensi…", #selector(settings), ",")
         add("Informazioni su The Black Cat", #selector(about), "")
+        let info = Bundle.main.infoDictionary
+        let version = NSMenuItem(title: "Versione \(info?["CFBundleShortVersionString"] as? String ?? "?") (build \(info?["CFBundleVersion"] as? String ?? "?"))",
+                                 action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Esci", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
