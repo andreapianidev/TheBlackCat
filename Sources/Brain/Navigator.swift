@@ -41,8 +41,9 @@ enum Navigator {
             let takeoff = here.span.clamp(wall.x + dir * 55 * s, inset: 8 * s)
             let gap = (takeoff - wall.x) * dir
             guard gap > 18 * s, gap < 230 * s else { continue }
-            let grabY = min(here.y + body.maxJumpUp * 0.6, wall.span.hi - 20 * s)
-            guard grabY >= wall.span.lo + 4, grabY > here.y + 25 * s else { continue }
+            // Grab low on the side, or just above its bottom edge when the window starts higher up.
+            let grabY = min(max(here.y + body.maxJumpUp * 0.6, wall.span.lo + 12 * s), wall.span.hi - 20 * s)
+            guard grabY >= wall.span.lo + 4, grabY > here.y + 25 * s, grabY <= here.y + body.maxJumpUp * 0.95 else { continue }
             // Only climb what a jump cannot reach, and only if the wall reaches the top.
             guard w.frame.maxY - here.y > body.maxJumpUp * 0.75, wall.span.hi >= w.frame.maxY - 6 else { continue }
             let cornerX = wall.side == .left ? w.frame.minX + 14 * s : w.frame.maxX - 14 * s

@@ -221,7 +221,7 @@ final class Brain {
             // Sometimes the claws do not hold: a scramble, then down it goes.
             if !slipDecided {
                 slipDecided = true
-                let chance = 0.18 + (1 - needs.energy) * 0.15
+                let chance = 0.1 + (1 - needs.energy) * 0.12
                 slipAt = Double.random(in: 0..<1) < chance ? time + .random(in: 0.4...1.3) : .infinity
             }
             if time >= slipAt {

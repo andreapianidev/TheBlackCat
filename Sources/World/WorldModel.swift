@@ -118,8 +118,8 @@ enum WorldBuilder {
                 }
             }
 
-            // The sides, if the window is tall enough to be worth climbing.
-            guard w.frame.height >= 140 else { continue }
+            // The sides, if the window is tall enough to be worth climbing (Stage Manager thumbnails are about 140).
+            guard w.frame.height >= 90 else { continue }
             let sides: [(WallSide, CGFloat)] = [(.left, w.frame.minX), (.right, w.frame.maxX)]
             for (side, x) in sides {
                 // The cat hangs outside the window, so there must be screen room there.
@@ -130,7 +130,7 @@ enum WorldBuilder {
                 let cuts = front
                     .filter { $0.frame.minX <= x + 3 && $0.frame.maxX >= x - 3 }
                     .map { Interval(lo: $0.frame.minY, hi: $0.frame.maxY) }
-                for piece in IntervalMath.subtract(base, cuts) where piece.length >= 80 {
+                for piece in IntervalMath.subtract(base, cuts) where piece.length >= 70 {
                     world.walls.append(Wall(windowID: w.id, side: side, x: x, span: piece))
                 }
             }
