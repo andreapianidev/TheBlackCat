@@ -82,13 +82,13 @@ la grafica di base non va stravolta.
 cd ~/prototipi/TheBlackCat
 ./scripts/bump-build.sh                       # a ogni modifica, nello stesso commit
 xcodebuild -project TheBlackCat.xcodeproj -scheme TheBlackCat -destination 'platform=macOS' \
-  -derivedDataPath build/dd -allowProvisioningUpdates -jobs 3 test -only-testing:TheBlackCatTests
+  -derivedDataPath build.noindex/dd -allowProvisioningUpdates -jobs 3 test -only-testing:TheBlackCatTests
 xcodebuild -project TheBlackCat.xcodeproj -scheme TheBlackCat -configuration Release \
-  -destination 'platform=macOS' -derivedDataPath build/dd -allowProvisioningUpdates -jobs 3 build
+  -destination 'platform=macOS' -derivedDataPath build.noindex/dd -allowProvisioningUpdates -jobs 3 build
 # installare e riavviare (Andrea lo chiede dopo ogni modifica)
 pkill -f "The Black Cat.app/Contents/MacOS"; sleep 1
 rm -rf "/Applications/The Black Cat.app"
-ditto "build/dd/Build/Products/Release/The Black Cat.app" "/Applications/The Black Cat.app"
+ditto "build.noindex/dd/Build/Products/Release/The Black Cat.app" "/Applications/The Black Cat.app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/The Black Cat.app"
 open "/Applications/The Black Cat.app"
 ```
@@ -114,6 +114,10 @@ Foglio di prova delle posture:
   posizione della finestra del gatto con CGWindowList, punti caldi con `sample`.
 
 ## Cose già imparate (non rifarle)
+
+- Le compilazioni vanno in `build.noindex/` (Spotlight ignora le cartelle
+  `.noindex`). Con `build/dd` ogni copia compilata compariva nel Launchpad come
+  un altro gatto: il 06/10/2026 erano quattro. Una sola copia, in `/Applications`.
 
 - Il ciclo a fotogrammi va legato allo schermo, non alla finestra del gatto:
   una finestra fuori dallo schermo ferma il suo display link e il gatto resta

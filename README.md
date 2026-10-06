@@ -13,15 +13,15 @@ barra dei menu, non ha icona nel Dock.
 ```bash
 xcodegen generate
 xcodebuild -scheme TheBlackCat -configuration Debug -destination 'platform=macOS' \
-  -derivedDataPath build/dd -allowProvisioningUpdates -jobs 3 build
+  -derivedDataPath build.noindex/dd -allowProvisioningUpdates -jobs 3 build
 ```
 
-Il `.app` esce in `build/dd/Build/Products/Debug/The Black Cat.app`.
+Il `.app` esce in `build.noindex/dd/Build/Products/Debug/The Black Cat.app`.
 
 Test (solo logica, non apre nessuna finestra):
 
 ```bash
-xcodebuild -scheme TheBlackCat -destination 'platform=macOS' -derivedDataPath build/dd test
+xcodebuild -scheme TheBlackCat -destination 'platform=macOS' -derivedDataPath build.noindex/dd test
 ```
 
 Numero di build: sale a ogni modifica, nello stesso commit, con
