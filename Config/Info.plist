@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>it</string>
+	<key>CFBundleDisplayName</key>
+	<string>The Black Cat</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>The Black Cat</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.entertainment</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Il gatto ti avvisa quando una riunione sta per cominciare. Gli eventi restano sul Mac.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Il gatto vuole vederti: si accorge quando sei davanti al Mac, ti guarda e ti risponde se lo saluti con la mano. Le immagini restano sul Mac e non vengono salvate.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Il gatto guarda fuori: con la tua posizione approssimativa sa se piove o se c'è il sole.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Il gatto guarda fuori: con la tua posizione approssimativa sa se piove o se c'è il sole.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Il gatto ti ascolta: si spaventa se batti le mani e arriva quando lo chiami per nome. L'audio resta sul Mac e non viene salvato.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Serve al gatto per capire quando lo chiami per nome o gli dici «giù» e «pappa». Il riconoscimento avviene sul Mac.</string>
+</dict>
+</plist>

@@ -1,0 +1,122 @@
+name: TheBlackCat
+options:
+  bundleIdPrefix: app.andreapiani
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: it
+
+settingGroups:
+  common:
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ERAK83QBBM
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  TheBlackCat:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - Shared
+      - Resources
+    dependencies:
+      - target: TheBlackCatWidget
+        embed: true
+    entitlements:
+      path: Config/TheBlackCat.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - ERAK83QBBM.app.andreapiani.theblackcat
+        com.apple.security.device.camera: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.personal-information.location: true
+        com.apple.security.personal-information.calendars: true
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: The Black Cat
+        CFBundleName: The Black Cat
+        CFBundleDevelopmentRegion: it
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.entertainment
+        LSMinimumSystemVersion: "26.0"
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: "© 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias"
+        NSCameraUsageDescription: "Il gatto vuole vederti: si accorge quando sei davanti al Mac, ti guarda e ti risponde se lo saluti con la mano. Le immagini restano sul Mac e non vengono salvate."
+        NSMicrophoneUsageDescription: "Il gatto ti ascolta: si spaventa se batti le mani e arriva quando lo chiami per nome. L'audio resta sul Mac e non viene salvato."
+        NSSpeechRecognitionUsageDescription: "Serve al gatto per capire quando lo chiami per nome o gli dici «giù» e «pappa». Il riconoscimento avviene sul Mac."
+        NSLocationUsageDescription: "Il gatto guarda fuori: con la tua posizione approssimativa sa se piove o se c'è il sole."
+        NSLocationWhenInUseUsageDescription: "Il gatto guarda fuori: con la tua posizione approssimativa sa se piove o se c'è il sole."
+        NSCalendarsFullAccessUsageDescription: "Il gatto ti avvisa quando una riunione sta per cominciare. Gli eventi restano sul Mac."
+    settings:
+      groups: [common]
+      base:
+        PRODUCT_NAME: The Black Cat
+        PRODUCT_MODULE_NAME: TheBlackCat
+        PRODUCT_BUNDLE_IDENTIFIER: app.andreapiani.theblackcat
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+
+  TheBlackCatWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Widget
+      - Shared
+    entitlements:
+      path: Config/TheBlackCatWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - ERAK83QBBM.app.andreapiani.theblackcat
+    info:
+      path: Config/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: The Black Cat
+        CFBundleDevelopmentRegion: it
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSHumanReadableCopyright: "© 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      groups: [common]
+      base:
+        PRODUCT_NAME: TheBlackCatWidget
+        PRODUCT_BUNDLE_IDENTIFIER: app.andreapiani.theblackcat.widget
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+
+  TheBlackCatTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+      - Sources/World/Geometry.swift
+      - Sources/World/WorldModel.swift
+      - Sources/Body/Ballistics.swift
+      - Sources/Brain/Needs.swift
+      - Sources/Brain/ThoughtText.swift
+    settings:
+      groups: [common]
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.andreapiani.theblackcat.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  TheBlackCat:
+    build:
+      targets:
+        TheBlackCat: all
+        TheBlackCatTests: [test]
+    test:
+      targets:
+        - TheBlackCatTests
