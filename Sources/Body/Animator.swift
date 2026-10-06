@@ -14,6 +14,14 @@ struct Flourish: OptionSet {
     static let yawn = Flourish(rawValue: 1 << 8)
     static let eat = Flourish(rawValue: 1 << 9)
     static let scramble = Flourish(rawValue: 1 << 10)
+    /// Licks a paw and wipes it over the face (groom pose).
+    static let faceWash = Flourish(rawValue: 1 << 11)
+    /// Rubs its back on the floor, paws paddling (belly pose).
+    static let roll = Flourish(rawValue: 1 << 12)
+    /// Head going round after chasing its tail.
+    static let dizzy = Flourish(rawValue: 1 << 13)
+    /// The tickle before a sneeze.
+    static let preSneeze = Flourish(rawValue: 1 << 14)
 }
 
 /// What the view needs to place the drawing on screen.
@@ -35,6 +43,8 @@ final class Animator {
     /// Looking straight out of the screen, at the person.
     var lookAtViewer = false
     var eyesClosed = false
+    /// 0...1: locked on something. Pupils widen, ears point forward, no blinking.
+    var focus: CGFloat = 0
     var beat: CGFloat = 2
     var coat: CatCoat = .black
     var comic = false
@@ -58,11 +68,19 @@ final class Animator {
     private var squash: CGFloat = 0
     private var puffBoost: CGFloat = 0
     private var pupilBoost: CGFloat = 0
+    private var sneezeT: CGFloat = -1
+    private var dreamT: CGFloat = -1
+    private var nextSwivel: CGFloat = 5
+    private var swivelT: CGFloat = -1
+    private var swivelLength: CGFloat = 1.5
 
     private(set) var lastFrame: CatFrame?
 
     func landed(speed: CGFloat) { squash = min(1, speed / 1600) }
     func startle() { puffBoost = 1; pupilBoost = 1 }
+    func sneeze() { sneezeT = 0; squash = max(squash, 0.25) }
+    /// A twitch in the sleep: paws running, ears and head jerking.
+    func dream() { dreamT = 0 }
 
     func update(_ dt: CGFloat, body: CatBody, dark: Bool) -> CatFrame {
         time += dt
@@ -73,6 +91,10 @@ final class Animator {
         if flourish.contains(.meow) { target.mouthOpen = 0.7 }
         if flourish.contains(.yawn) { target.mouthOpen = 1; target.eyeOpen = 0.05; target.headTilt += 0.35 }
         if lookAtViewer { target.pupil = max(target.pupil, 0.75) }
+        if focus > 0 {
+            target.pupil = max(target.pupil, 0.35 + 0.65 * focus)
+            target.earBack *= 1 - focus
+        }
         target.pupil = min(1, target.pupil + pupilBoost * 0.6)
         let airborne = kind == .airUp || kind == .airDown || kind == .dangle
         let rate: CGFloat = airborne ? 16 : 8
@@ -129,6 +151,20 @@ final class Animator {
         if flourish.contains(.purr) {
             p.headTilt += sin(time * 1.3) * 0.06
         }
+        if flourish.contains(.faceWash) { CatMotion.faceWash(&p, t: time) }
+        if flourish.contains(.roll) { CatMotion.roll(&p, t: time) }
+        if flourish.contains(.dizzy) { CatMotion.dizzy(&p, t: time) }
+        if flourish.contains(.preSneeze) { CatMotion.preSneeze(&p, t: time) }
+        if sneezeT >= 0 {
+            sneezeT += dt
+            CatMotion.sneeze(&p, u: sneezeT / 0.32)
+            if sneezeT > 0.32 { sneezeT = -1 }
+        }
+        if dreamT >= 0 {
+            dreamT += dt
+            if kind == .sleep { CatMotion.dream(&p, u: dreamT / 1.3) }
+            if dreamT > 1.3 { dreamT = -1 }
+        }
 
         // Landing squash.
         if squash > 0.01 {
@@ -138,7 +174,7 @@ final class Animator {
         }
 
         // Blink and ear twitches.
-        if p.eyeOpen > 0.3 {
+        if p.eyeOpen > 0.3 && focus < 0.5 {
             nextBlink -= dt
             if nextBlink <= 0 { blinkT = 0; nextBlink = .random(in: 2...6.5) }
         }
@@ -152,8 +188,21 @@ final class Animator {
         if nextTwitch <= 0 { twitchT = 0; nextTwitch = .random(in: 3...10) }
         if twitchT >= 0 {
             twitchT += dt
-            p.earBack = max(p.earBack, sin(min(1, twitchT / 0.22) * .pi) * 0.6)
+            p.earBack = max(p.earBack, sin(min(1, twitchT / 0.22) * .pi) * 0.6 * (1 - focus))
             if twitchT > 0.22 { twitchT = -1 }
+        }
+        // Now and then the far ear turns back on its own, listening to something behind.
+        if kind != .sleep && focus < 0.3 {
+            nextSwivel -= dt
+            if nextSwivel <= 0 { swivelT = 0; swivelLength = .random(in: 1.2...2.6); nextSwivel = .random(in: 7...16) }
+        }
+        if swivelT >= 0 {
+            swivelT += dt
+            let u = swivelT / swivelLength
+            // Quick to turn, slow to come back.
+            let k = u < 0.15 ? u / 0.15 : max(0, 1 - (u - 0.6) / 0.4)
+            p.earSwivel = max(p.earSwivel, min(1, k) * (1 - focus))
+            if u >= 1 { swivelT = -1 }
         }
 
         // Where the cat is facing and how it is rotated on screen.
@@ -197,6 +246,8 @@ final class Animator {
         var style = tailStyle
         style.puff = max(style.puff, 1 + puffBoost * 0.9)
         if flourish.contains(.sway) { style.waveFreq = beat / 2; style.waveAmp = 0.45 }
+        if dreamT >= 0 { style.waveFreq = 3.2; style.waveAmp = max(style.waveAmp, 0.35) }
+        if focus > 0.6 && kind != .crouch { style.waveAmp *= 0.4 }
         puffBoost *= exp(-0.8 * dt)
         pupilBoost *= exp(-1.5 * dt)
         let c = cos(-displayRotation), s = sin(-displayRotation)

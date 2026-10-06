@@ -36,6 +36,8 @@ struct CatPose {
     /// 0 is a slit, 1 a round hunting pupil.
     var pupil: CGFloat = 0.35
     var earBack: CGFloat = 0
+    /// The far ear alone turned back, listening behind (0...1).
+    var earSwivel: CGFloat = 0
     var mouthOpen: CGFloat = 0
     /// 1 hides the legs under the body (loaf, sleep).
     var tuck: CGFloat = 0
@@ -50,7 +52,7 @@ struct CatPose {
         r.head = p(a.head, b.head); r.headR = l(a.headR, b.headR); r.headTilt = l(a.headTilt, b.headTilt)
         r.feet = zip(a.feet, b.feet).map { p($0, $1) }
         r.eyeOpen = l(a.eyeOpen, b.eyeOpen); r.pupil = l(a.pupil, b.pupil)
-        r.earBack = l(a.earBack, b.earBack); r.mouthOpen = l(a.mouthOpen, b.mouthOpen)
+        r.earBack = l(a.earBack, b.earBack); r.earSwivel = l(a.earSwivel, b.earSwivel); r.mouthOpen = l(a.mouthOpen, b.mouthOpen)
         r.tuck = l(a.tuck, b.tuck)
         return r
     }

@@ -40,7 +40,9 @@ protocol SceneScript: AnyObject {
     func update(_ dt: CGFloat, world: World) -> Bool
 }
 
-/// Rare little scenes: a visitor arrives and the cat reacts.
+/// Little scenes: a visitor arrives and the cat reacts. The first one comes a minute or so
+/// after launch, then one every few minutes, dealt from a shuffled deck so all of them show up
+/// before any comes back.
 @MainActor
 final class SceneDirector {
     static let platformID: UInt32 = 0xFFFF_0001
@@ -49,7 +51,10 @@ final class SceneDirector {
     private let stage: Stage
     private var scene: SceneScript?
     private var panels: [ObjectIdentifier: VisitorPanel] = [:]
-    private var nextAt = Date().addingTimeInterval(.random(in: 300...600))
+    private var nextAt = Date().addingTimeInterval(.random(in: 45...90))
+    private var deck: [SceneKind] = []
+    private var lastKind: SceneKind?
+    private var sceneTime: CGFloat = 0
 
     init(stage: Stage) { self.stage = stage }
 
@@ -64,7 +69,10 @@ final class SceneDirector {
     func start(_ kind: SceneKind?, world: World) {
         stop()
         guard let floor = stage.floor(world) else { return }
-        let k = kind ?? SceneKind.allCases.randomElement()!
+        let k = kind ?? deal()
+        if kind != nil { deck.removeAll { $0 == k } }
+        lastKind = k
+        sceneTime = 0
         switch k {
         case .bird: scene = BirdScene(stage, world: world, floor: floor)
         case .dog: scene = DogScene(stage, floor: floor)
@@ -78,6 +86,19 @@ final class SceneDirector {
         }
     }
 
+    /// The next scene from the deck, reshuffled once every scene has been seen.
+    private func deal() -> SceneKind {
+        if deck.isEmpty {
+            deck = SceneKind.allCases.shuffled()
+            if deck.count > 1, deck.first == lastKind { deck.swapAt(0, deck.count - 1) }
+        }
+        return deck.removeFirst()
+    }
+
+    private func scheduleNext() {
+        nextAt = Date().addingTimeInterval(.random(in: 180...360))
+    }
+
     func stop() {
         for p in panels.values { p.close() }
         panels.removeAll()
@@ -89,14 +110,19 @@ final class SceneDirector {
         if paused { if scene != nil { stop() }; return }
         if scene == nil {
             guard enabled, Date() > nextAt else { return }
-            nextAt = Date().addingTimeInterval(.random(in: 600...1500))
-            // A sleeping cat only wakes up for some visitors.
-            if stage.brain.isAsleep && Bool.random() { return }
+            // A sleeping cat only wakes up for some visitors: if not this time, try again in a minute.
+            if stage.brain.isAsleep && Bool.random() {
+                nextAt = Date().addingTimeInterval(60)
+                return
+            }
+            scheduleNext()
             start(nil, world: world)
             return
         }
         guard let sc = scene else { return }
-        let finished = sc.update(dt, world: world)
+        sceneTime += dt
+        // A scene that somehow never ends must not block all the ones after it.
+        let finished = sc.update(dt, world: world) || sceneTime > 150
         let live = Set(sc.visitors.map { ObjectIdentifier($0) })
         for (id, p) in panels where !live.contains(id) { p.close(); panels[id] = nil }
         for v in sc.visitors {
@@ -106,7 +132,7 @@ final class SceneDirector {
         }
         if finished {
             stop()
-            nextAt = Date().addingTimeInterval(.random(in: 600...1500))
+            scheduleNext()
         }
     }
 }

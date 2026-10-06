@@ -2,18 +2,28 @@ import AppKit
 import Foundation
 import Security
 
-/// The Agnes API key, kept in the login keychain.
-enum AgnesKey {
-    private static let service = "app.andreapiani.theblackcat"
-    private static let account = "agnes"
+/// A cloud API key, kept in the login keychain and imported from the vault in ~/.secrets.
+/// Keys never live in the repository.
+struct VaultKey {
+    let account: String
+    let label: String
+    let file: String
+    let variable: String
 
-    private static var query: [String: Any] {
+    static let agnes = VaultKey(account: "agnes", label: "The Black Cat, chiave Agnes",
+                                file: "agnes-ai.env", variable: "AGNES_API_KEY")
+    static let deepSeek = VaultKey(account: "deepseek", label: "The Black Cat, chiave DeepSeek",
+                                   file: "deepseek-harness.env", variable: "DEEPSEEK_API_KEY")
+
+    private static let service = "app.andreapiani.theblackcat"
+
+    private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
+         kSecAttrService as String: Self.service,
          kSecAttrAccount as String: account]
     }
 
-    static func load() -> String? {
+    func load() -> String? {
         var q = query
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -26,31 +36,30 @@ enum AgnesKey {
         return key
     }
 
-    static func save(_ key: String) {
+    func save(_ key: String) {
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let data = key.data(using: .utf8) else { return }
         let update: [String: Any] = [kSecValueData as String: data]
         if SecItemUpdate(query as CFDictionary, update as CFDictionary) == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
-            add[kSecAttrLabel as String] = "The Black Cat, chiave Agnes"
+            add[kSecAttrLabel as String] = label
             SecItemAdd(add as CFDictionary, nil)
         }
     }
 
-    static func delete() {
+    func delete() {
         SecItemDelete(query as CFDictionary)
     }
 
-    /// Reads AGNES_API_KEY from ~/.secrets/agnes-ai.env and stores it in the keychain.
-    static func importFromVault() -> Bool {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".secrets/agnes-ai.env")
+    /// Reads the variable from ~/.secrets/<file> and stores it in the keychain.
+    func importFromVault() -> Bool {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".secrets/\(file)")
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
         for raw in text.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("export ") { line = String(line.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
-            guard line.hasPrefix("AGNES_API_KEY="), let eq = line.firstIndex(of: "=") else { continue }
+            guard line.hasPrefix(variable + "="), let eq = line.firstIndex(of: "=") else { continue }
             var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
             if let hash = value.range(of: " #") { value = String(value[..<hash.lowerBound]) }
             value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'").union(.whitespaces))
@@ -60,6 +69,14 @@ enum AgnesKey {
         }
         return false
     }
+}
+
+/// The Agnes API key.
+enum AgnesKey {
+    static func load() -> String? { VaultKey.agnes.load() }
+    static func save(_ key: String) { VaultKey.agnes.save(key) }
+    static func delete() { VaultKey.agnes.delete() }
+    static func importFromVault() -> Bool { VaultKey.agnes.importFromVault() }
 }
 
 /// Minimal client for the Agnes gateway (OpenAI compatible chat completions).

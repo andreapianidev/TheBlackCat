@@ -1,13 +1,13 @@
 import Foundation
 import FoundationModels
 
-/// Gives the cat something to say. Uses Agnes in the cloud when chosen and a key
+/// Gives the cat something to say. Uses Agnes or DeepSeek in the cloud when chosen and a key
 /// is present, the on device Apple Intelligence model when it is available and
 /// allowed, the hand written lines otherwise.
 @MainActor
 final class ThoughtEngine {
     var useModel = true
-    var cloud = false
+    var cloud: CloudBrain?
     var name = "Nerone"
     var adjective = "nero"
 
@@ -26,10 +26,14 @@ final class ThoughtEngine {
     }
 
     var cloudStatus: String {
-        AgnesKey.load() != nil ? "Agnes: chiave presente" : "Agnes: manca la chiave"
+        switch cloud {
+        case .agnes: return AgnesKey.load() != nil ? "Agnes: chiave presente" : "Agnes: manca la chiave"
+        case .deepseek: return DeepSeekClient.hasKey ? "DeepSeek: chiave presente" : "DeepSeek: manca la chiave"
+        case nil: return "Nessun cervello nel cloud"
+        }
     }
 
-    private var cloudReady: Bool { cloud && AgnesKey.load() != nil }
+    private var cloudReady: Bool { cloud?.ready ?? false }
 
     var modelAvailable: Bool {
         if case .available = SystemLanguageModel.default.availability { return true }
@@ -87,8 +91,8 @@ final class ThoughtEngine {
         Esempi di tono: \(examples)
         Pensiero nuovo:
         """
-        if cloudReady,
-           let raw = try? await AgnesClient.chat(system: instructions, user: prompt),
+        if let cloud, cloud.ready,
+           let raw = try? await cloud.chat(system: instructions, user: prompt),
            let line = ThoughtBank.clean(raw) {
             return line
         }

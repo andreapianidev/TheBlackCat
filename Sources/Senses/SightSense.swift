@@ -2,10 +2,10 @@ import AVFoundation
 import Vision
 
 /// The webcam, read a few times a second with Vision: is someone there, are they waving.
+/// It is opened only for short glances (see Attention), never left on.
 /// Frames are analysed and dropped on the spot, nothing is stored.
 final class SightSense: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onPresence: ((Bool) -> Void)?
-    var onAway: ((Bool) -> Void)?
     var onWave: (() -> Void)?
 
     private let session = AVCaptureSession()
@@ -14,11 +14,22 @@ final class SightSense: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var lastRun: CFTimeInterval = 0
     private var lastFace: CFTimeInterval = 0
     private var present = false
-    private var away = false
+    private var openUntil = Date.distantPast
     private var palm: [(CFTimeInterval, CGFloat)] = []
     private var lastWave: CFTimeInterval = 0
 
-    func start() {
+    /// Opens the camera for a few seconds, then closes it again.
+    func glance(for seconds: TimeInterval) {
+        let until = Date().addingTimeInterval(seconds)
+        if until > openUntil { openUntil = until }
+        start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.1) { [weak self] in
+            guard let self, Date() >= self.openUntil else { return }
+            self.stop()
+        }
+    }
+
+    private func start() {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
             guard ok, let self else { return }
             self.queue.async {
@@ -77,13 +88,6 @@ final class SightSense: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         if isPresent != present {
             present = isPresent
             DispatchQueue.main.async { self.onPresence?(isPresent) }
-        }
-        if !away && now - lastFace > 25 {
-            away = true
-            DispatchQueue.main.async { self.onAway?(true) }
-        } else if away && isPresent {
-            away = false
-            DispatchQueue.main.async { self.onAway?(false) }
         }
 
         if let hand = hands.results?.first, let x = openPalmX(hand) {

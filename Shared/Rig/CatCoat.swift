@@ -23,6 +23,8 @@ struct CatCoat: Identifiable, Equatable {
     var patchB: CGColor? = nil
     /// Dark coats get white ink lines in the comic style, light ones black.
     var isDark = false
+    /// Cartoon face: a wide white muzzle with cheek tufts and a big round nose.
+    var cartoon = false
 
     static func == (a: CatCoat, b: CatCoat) -> Bool { a.id == b.id }
 
@@ -83,7 +85,14 @@ struct CatCoat: Identifiable, Equatable {
         whisker: c(1, 1, 1, 0.7), closedEye: c(0.25, 0.22, 0.2), rim: c(0.95, 0.9, 0.8, 0.3),
         stripes: c(0.22, 0.19, 0.16))
 
-    static let all: [CatCoat] = [.black, .tuxedo, .ginger, .chartreux, .white, .siamese, .calico, .tabby]
+    static let silvestro = CatCoat(
+        id: "silvestro", name: "Silvestro", adjective: "nero e bianco, da cartone animato, col nasone rosso",
+        fur: c(0.05, 0.05, 0.065), farFur: c(0.12, 0.12, 0.15), earInner: c(0.86, 0.45, 0.5),
+        nose: c(0.86, 0.16, 0.2), irisIn: c(0.98, 0.95, 0.55), irisOut: c(0.86, 0.74, 0.16),
+        whisker: c(1, 1, 1, 0.75), closedEye: c(0.45, 0.47, 0.55), rim: c(0.47, 0.55, 0.72, 0.38),
+        bib: c(0.97, 0.97, 0.95), isDark: true, cartoon: true)
+
+    static let all: [CatCoat] = [.black, .tuxedo, .silvestro, .ginger, .chartreux, .white, .siamese, .calico, .tabby]
 
     static func named(_ id: String) -> CatCoat { all.first { $0.id == id } ?? .black }
 

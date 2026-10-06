@@ -56,6 +56,10 @@ Foglio con tutte le posture: `tools/PoseSheet`.
   - Vista: fotocamera e Vision, ti riconosce davanti al Mac, risponde al saluto.
   - Udito: SoundAnalysis (mani, cani, fischi, musica) e riconoscimento vocale
     in italiano (il suo nome, «giù», «pappa», «nanna», «bravo»).
+  - Fotocamera e microfono non restano mai accesi: `Attention` li apre per pochi
+    secondi quando torni al Mac, quando clicchi il gatto e, solo la fotocamera,
+    ogni tanto per curiosità. Che sei via lo legge da tastiera e mouse
+    (e non durante un video, che tiene sveglio lo schermo).
   - Occhi sullo schermo: ScreenCaptureKit e Vision, caccia uccellini e pesci,
     reagisce a parole come «tonno» o «aspirapolvere».
   - Sistema: app in primo piano, risveglio, Mac che scotta, batteria, risparmio

@@ -23,6 +23,7 @@ final class CatController: NSObject {
     private var bowl: BowlPanel?
     private let voice = CatVoice()
     private let thoughts = ThoughtEngine()
+    private let mind = Mind()
     private lazy var menuBar = MenuBar(actions: self)
     private let settingsWindow = SettingsWindow()
 
@@ -30,6 +31,7 @@ final class CatController: NSObject {
     private let hearing = HearingSense()
     private let screenEyes = ScreenSense()
     private let system = SystemSense()
+    private let attention = Attention()
     private let weather = WeatherSense()
     private let calendar = CalendarSense()
     private let notifier = Notifier()
@@ -40,6 +42,7 @@ final class CatController: NSObject {
     private var lastTick: CFTimeInterval = 0
     private var scanTimer: Timer?
     private var slowTimer: Timer?
+    private var mindTimer: Timer?
     private var scanInterval: TimeInterval = 0
     private var cancellables: Set<AnyCancellable> = []
 
@@ -372,13 +375,14 @@ final class CatController: NSObject {
         }.store(in: &cancellables)
         settings.$sound.sink { [weak self] on in self?.voice.enabled = on }.store(in: &cancellables)
         settings.$volume.sink { [weak self] v in self?.voice.volume = Float(v) }.store(in: &cancellables)
-        settings.$name.sink { [weak self] n in self?.thoughts.name = n; self?.hearing.name = n }.store(in: &cancellables)
+        settings.$name.sink { [weak self] n in self?.thoughts.name = n; self?.hearing.name = n; self?.mind.name = n }.store(in: &cancellables)
         settings.$coat.sink { [weak self] id in
             guard let self else { return }
             let coat = CatCoat.named(id)
             let changed = self.anim.coat != coat
             self.anim.coat = coat
             self.thoughts.adjective = coat.adjective
+            self.mind.adjective = coat.adjective
             if changed { self.emit(.ring); self.emit(.sparkle) }
         }.store(in: &cancellables)
         settings.$comic.sink { [weak self] on in
@@ -387,12 +391,23 @@ final class CatController: NSObject {
             self.anim.comic = on
             if changed { self.emit(.ring) }
         }.store(in: &cancellables)
-        settings.$brain.sink { [weak self] b in self?.thoughts.cloud = b == "agnes" }.store(in: &cancellables)
+        settings.$brain.sink { [weak self] b in
+            // A cloud brain without its key: try the vault in ~/.secrets once, into the keychain.
+            if let c = CloudBrain(rawValue: b), !c.ready {
+                _ = (c == .agnes ? VaultKey.agnes : VaultKey.deepSeek).importFromVault()
+            }
+            self?.thoughts.cloud = CloudBrain(rawValue: b)
+            self?.mind.cloud = CloudBrain(rawValue: b)
+        }.store(in: &cancellables)
         settings.$agnesVision.sink { [weak self] on in self?.screenEyes.agnesVision = on }.store(in: &cancellables)
         settings.$scenes.sink { [weak self] on in self?.director.enabled = on }.store(in: &cancellables)
-        settings.$aiThoughts.sink { [weak self] on in self?.thoughts.useModel = on }.store(in: &cancellables)
-        settings.$sight.sink { [weak self] on in on ? self?.sight.start() : self?.sight.stop() }.store(in: &cancellables)
-        settings.$hearing.sink { [weak self] on in on ? self?.hearing.start() : self?.hearing.stop() }.store(in: &cancellables)
+        settings.$aiThoughts.sink { [weak self] on in
+            self?.thoughts.useModel = on
+            self?.mind.enabled = on
+        }.store(in: &cancellables)
+        // Camera and microphone are never left on: switching them on only allows short glances.
+        settings.$sight.sink { [weak self] on in on ? self?.sight.glance(for: 6) : self?.sight.stop() }.store(in: &cancellables)
+        settings.$hearing.sink { [weak self] on in on ? self?.hearing.listen(for: 8) : self?.hearing.stop() }.store(in: &cancellables)
         settings.$screenEyes.sink { [weak self] on in on ? self?.screenEyes.start() : self?.screenEyes.stop() }.store(in: &cancellables)
         settings.$weather.sink { [weak self] on in on ? self?.weather.start() : self?.weather.stop() }.store(in: &cancellables)
         settings.$calendar.sink { [weak self] on in on ? self?.calendar.start() : self?.calendar.stop() }.store(in: &cancellables)
@@ -409,7 +424,21 @@ final class CatController: NSObject {
 
     private func wireSenses() {
         sight.onPresence = { [weak self] present in self?.brain.faceVisible = present }
-        sight.onAway = { [weak self] away in self?.brain.react(away ? .userLeft : .userBack) }
+        attention.onEvent = { [weak self] e in self?.brain.react(e) }
+        attention.catAwake = { [weak self] in !(self?.brain.isAsleep ?? true) }
+        attention.openEyes = { [weak self] s in
+            guard let self, self.settings.sight, !self.settings.paused else { return }
+            self.sight.glance(for: s)
+        }
+        attention.openEars = { [weak self] s in
+            guard let self, self.settings.hearing, !self.settings.paused else { return }
+            self.hearing.listen(for: s)
+        }
+        attention.start()
+        mindTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.consultMind() }
+        }
+        mindTimer?.tolerance = 1
         sight.onWave = { [weak self] in self?.brain.react(.wave) }
         hearing.onEvent = { [weak self] e in self?.brain.react(e) }
         screenEyes.onEvent = { [weak self] e in self?.brain.react(e) }
@@ -547,6 +576,32 @@ extension CatController: BrainOutput {
         brain.favorites[owner, default: 0] += 1
     }
 
+    /// Every minute or two the cat decides, with its own character, what to do next.
+    private func consultMind() {
+        guard !settings.paused, !brain.isAsleep, !director.isActive, !dragging else { return }
+        let apps = Array(Set(world.windows.map(\.owner).filter { !$0.isEmpty && $0 != "Dock" })).sorted()
+        mind.maybeDecide(situation: { self.mindSituation() }, apps: apps) { [weak self] d in
+            guard let self, !self.settings.paused, !self.director.isActive else { return }
+            self.brain.intend(d.intent, app: d.app)
+            if self.settings.thoughts, !d.thought.isEmpty, Int.random(in: 0..<3) > 0,
+               let line = ThoughtBank.clean(d.thought) {
+                self.sayText(line)
+            }
+        }
+    }
+
+    private func mindSituation() -> String {
+        let n = brain.needs
+        func level(_ v: Double) -> String { v > 0.7 ? "alta" : v > 0.4 ? "media" : "bassa" }
+        var parts = [thoughtContext(), "stai facendo: \(brain.status.lowercased())",
+                     "fame \(level(n.hunger)), energia \(level(n.energy)), voglia di giocare \(level(n.boredom)), "
+                     + "bisogno di coccole \(level(n.loneliness)), curiosità \(level(n.curiosity))"]
+        if brain.userAway { parts.append("l'umano non c'è") } else if brain.faceVisible { parts.append("l'umano ti sta guardando") }
+        if brain.musicPlaying { parts.append("c'è musica") }
+        if !settings.mischief { parts.append("i dispetti sono vietati") }
+        return parts.joined(separator: "; ")
+    }
+
     private func thoughtContext() -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -588,6 +643,7 @@ extension CatController: CatViewDelegate {
             return
         }
         brain.react(clicks >= 2 ? .doubleClicked : .clicked)
+        attention.poked()
     }
 
     func catMenu(_ event: NSEvent, in view: NSView) {

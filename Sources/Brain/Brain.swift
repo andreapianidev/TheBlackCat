@@ -65,7 +65,12 @@ private enum TaskKind {
     case watchTarget(() -> CGPoint?)
     case pounceAt(() -> CGPoint?)
     case call(() -> Void)
+    /// Hold a posture with the eyes locked on something; `ramp` builds the stare up over the task.
+    case focus(() -> CGPoint?, PoseKind, TailStyle, Flourish, ramp: Bool)
 }
+
+/// Little numbers the cat does on its own, between one visitor and the next.
+private enum Quirk: CaseIterable { case tailChase, zoomies, stretch, faceWash, ghost, roll, sneeze }
 
 private struct Task {
     var kind: TaskKind
@@ -115,6 +120,8 @@ final class Brain {
     private var nextZ: CGFloat = 0
     private var thrownPending = false
     private var lastMischief: CGFloat = -900
+    /// A decision from the Mind, carried out at the next free moment.
+    private var intent: (CatIntent, String)?
     private var viewerGlanceUntil: CGFloat = 0
     private var hangUntil: CGFloat = 0
     private var hangPull = false
@@ -127,6 +134,10 @@ final class Brain {
     private var nextScratchSound: CGFloat = 0
     private var slipDecided = false
     private var slipAt: CGFloat = .infinity
+    private var nextDream: CGFloat = 12
+    /// The last spontaneous number and when it happened, so they come often and never twice in a row.
+    private var lastQuirk: Quirk?
+    private var lastQuirkTime: CGFloat = 0
     /// Tasks a running task wants to add after itself (queue cannot change while a task runs).
     private var followUps: [Task] = []
     /// The fly the cat is hunting, if any.
@@ -160,7 +171,10 @@ final class Brain {
         if isPetted { return "Fa le fusa" }
         guard let t = queue.first else { return "Si guarda intorno" }
         switch t.kind {
-        case .hold(let k, _, _):
+        case .hold(let k, _, let f):
+            if f.contains(.roll) { return "Si rotola sulla schiena" }
+            if f.contains(.faceWash) { return "Si lava il muso" }
+            if f.contains(.dizzy) { return "Gli gira la testa" }
             switch k {
             case .sleep: return "Dorme"
             case .loaf: return "Fa la pagnotta"
@@ -184,6 +198,7 @@ final class Brain {
         case .nudge: return "Combina un guaio"
         case .spin: return "Si rincorre la coda"
         case .watchFly, .pounceFly: return "Caccia una mosca"
+        case .focus: return "Fissa qualcosa"
         default: return "Si guarda intorno"
         }
     }
@@ -194,7 +209,7 @@ final class Brain {
         switch t.kind {
         case .hold(.sleep, _, _): return .sleeping
         case .hold: return .resting
-        case .walk(_, .run), .stalk, .spin, .pounceFly: return .playing
+        case .walk(_, .run), .walk(_, .sprint), .stalk, .spin, .pounceFly: return .playing
         case .eat: return .eating
         default: return .active
         }
@@ -214,6 +229,7 @@ final class Brain {
         anim.eyesClosed = false
         anim.lookAtViewer = false
         anim.lookAt = nil
+        anim.focus = 0
 
         switch body.loco {
         case .dragged:
@@ -344,6 +360,9 @@ final class Brain {
                 anim.eyesClosed = true
                 nextZ -= dt
                 if nextZ <= 0 { out?.emit(.zzz); nextZ = .random(in: 1.6...2.6) }
+                // Dreaming: the paws run for a moment, the ears jerk.
+                nextDream -= dt
+                if nextDream <= 0 && t.elapsed > 6 { anim.dream(); nextDream = .random(in: 9...28) }
             }
             if musicPlaying && (k == .sit || k == .loaf) { anim.flourish.insert(.sway) }
             if k == .scratch {
@@ -358,7 +377,7 @@ final class Brain {
 
         case .walk(let x, let g):
             anim.kind = .stand
-            anim.tailStyle = g == .run ? .falling : (goal != nil ? .happy : .relaxed)
+            anim.tailStyle = g == .run || g == .sprint ? .falling : (goal != nil ? .happy : .relaxed)
             return body.walk(toward: x, gait: g, dt: dt, world: world) || t.elapsed > 30
 
         case .jump(let m):
@@ -510,6 +529,17 @@ final class Brain {
             action()
             return true
 
+        case .focus(let target, let k, let tail, let f, let ramp):
+            anim.kind = k
+            anim.tailStyle = tail
+            anim.flourish = f
+            if let p = target() {
+                anim.lookAt = p
+                if abs(p.x - body.pos.x) > 6 * body.scale { body.turn(toward: p.x) }
+            }
+            anim.focus = ramp ? min(1, t.elapsed / max(t.duration * 0.8, 0.1)) : 1
+            return t.elapsed >= t.duration
+
         case .flyOutcome:
             guard let f = fly else { return true }
             let s = body.scale
@@ -607,6 +637,11 @@ final class Brain {
             return
         }
 
+        if let (i, app) = intent {
+            intent = nil
+            if follow(i, app: app, world) { return }
+        }
+
         let hour = Calendar.current.component(.hour, from: Date())
         let live = Circadian.liveliness(hour: hour)
         let sleepy = Circadian.sleepiness(hour: hour)
@@ -629,19 +664,18 @@ final class Brain {
         if cursorNear {
             options.append((2.2 * n.boredom * n.energy * live, { self.queue = [Task(kind: .stalk, duration: .random(in: 1.0...2.4))] }))
         }
-        if Circadian.isZoomiesHour(hour) && n.energy > 0.5 {
-            options.append((0.6 * n.boredom, { self.planZoomies(world) }))
-        }
         if n.hunger > 0.65 {
             options.append((2.2 * n.hunger, { self.planAsk(.hungry) }))
         }
         if n.loneliness > 0.7 && !userAway {
             options.append((1.2 * n.loneliness, { self.planAsk(.idle) }))
         }
-        options.append((0.18 * n.boredom * n.energy * live, {
-            self.queue = [Task(kind: .spin, duration: .random(in: 2.2...3.6)), Task(kind: .particle(.question)),
-                          Task.hold(.sit, 1...1.6, .relaxed), Task(kind: .text("Era la mia coda. Lo sapevo."))]
-        }))
+        // Spontaneous numbers: often, and much more likely once a while has passed without one.
+        let due: Double = time - lastQuirkTime > 70 ? 4 : 1
+        for q in Quirk.allCases where q != lastQuirk {
+            let w = quirkWeight(q, hour: hour, live: live, world: world) * due
+            if w > 0 { options.append((w, { self.perform(q, world) })) }
+        }
         options.append((0.25 + n.loneliness * 0.4, { self.queue = [Task.hold(.belly, 4...9, .happy)] }))
         if let spot = scratchSpot(world) {
             options.append((0.3, {
@@ -735,9 +769,12 @@ final class Brain {
 
     private func planSleep(_ world: World) {
         let sequence: () -> [Task] = {
-            var t: [Task] = [Task(kind: .face(self.body.pos.x - self.body.facing * 50)),
+            // Make the bed first: knead it, turn round on it, then settle.
+            var t: [Task] = [Task.hold(.knead, 3...5, .happy, .knead),
+                             Task(kind: .face(self.body.pos.x - self.body.facing * 50)),
                              Task.hold(.stand, 0.4...0.6, .relaxed),
                              Task(kind: .face(self.body.pos.x + self.body.facing * 50)),
+                             Task.hold(.stand, 0.3...0.5, .relaxed),
                              Task.hold(.loaf, 2...4, .wrapped)]
             if Int.random(in: 0..<3) == 0 { t.append(Task(kind: .say(.sleepy))) }
             let long: ClosedRange<CGFloat> = self.userAway ? 300...900 : 90...420
@@ -761,18 +798,6 @@ final class Brain {
             return (CGPoint(x: l.span.clamp(l.span.lo + l.span.length * 0.3), y: l.y), score)
         }
         return candidates.max { $0.1 < $1.1 }?.0
-    }
-
-    private func planZoomies(_ world: World) {
-        guard let l = body.currentLedge(world) else { return }
-        queue = [Task(kind: .say(.zoomies)), Task.hold(.crouch, 0.3...0.5, .stalking, .wiggle)]
-        for i in 0..<Int.random(in: 3...6) {
-            let x = i % 2 == 0 ? l.span.hi : l.span.lo
-            queue.append(Task(kind: .walk(x: x, gait: .run)))
-            if Int.random(in: 0..<3) == 0 { queue.append(Task(kind: .hop(520))) }
-        }
-        queue.append(Task.hold(.sit, 1...2, .alert))
-        queue.append(Task.hold(.groom, 2...4, .relaxed, .lick))
     }
 
     private func planAsk(_ topic: ThoughtTopic) {
@@ -895,6 +920,147 @@ final class Brain {
         if isAsleep { queue = wakeUpFirst() }
     }
 
+    // MARK: Quirks
+
+    private func quirkWeight(_ q: Quirk, hour: Int, live: Double, world: World) -> Double {
+        let n = needs
+        let lively = max(0.35, live)
+        switch q {
+        case .tailChase: return n.energy > 0.25 ? 0.3 * (0.5 + n.boredom) * lively : 0
+        case .zoomies:
+            guard n.energy > 0.4, let l = body.currentLedge(world), l.span.length > 300 * body.scale else { return 0 }
+            return (Circadian.isZoomiesHour(hour) ? 0.9 : 0.22) * lively
+        case .stretch: return 0.3
+        case .faceWash: return 0.35
+        case .ghost: return 0.28 * (0.5 + n.curiosity)
+        case .roll: return 0.2 + n.loneliness * 0.2
+        case .sneeze: return 0.09
+        }
+    }
+
+    private func perform(_ q: Quirk, _ world: World) {
+        lastQuirk = q
+        lastQuirkTime = time
+        switch q {
+        case .tailChase: planTailChase()
+        case .zoomies: planZoomies(world)
+        case .stretch: planStretch()
+        case .faceWash: planFaceWash()
+        case .ghost: planGhost(world)
+        case .roll: planRoll()
+        case .sneeze: planSneeze()
+        }
+    }
+
+    /// Something behind it moved. It was the tail. Round and round, then the world spins.
+    private func planTailChase() {
+        let behind: () -> CGPoint? = { [weak self] in
+            guard let self else { return nil }
+            let s = self.body.scale
+            return CGPoint(x: self.body.pos.x - self.body.facing * 60 * s, y: self.body.pos.y + 8 * s)
+        }
+        queue = [Task(kind: .focus(behind, .crouch, .stalking, [.wiggle], ramp: true), duration: .random(in: 1.0...1.6)),
+                 Task(kind: .spin, duration: .random(in: 2.2...3.6)),
+                 Task(kind: .particle(.question)),
+                 Task.hold(.sit, 1.8...2.4, .relaxed, .dizzy)]
+        if Bool.random() {
+            queue.append(Task(kind: .text(["Era la mia coda. Lo sapevo.", "Mi gira tutto.", "Ce l'avevo quasi."].randomElement()!)))
+        }
+        queue.append(Task.hold(.groom, 2...3, .relaxed, .lick))
+    }
+
+    /// The mad dash: a frozen second, eyes like saucers, then back and forth at full tilt.
+    private func planZoomies(_ world: World) {
+        guard let l = body.currentLedge(world) else { return }
+        let s = body.scale
+        var dir: CGFloat = body.pos.x < (l.span.lo + l.span.hi) / 2 ? 1 : -1
+        let ahead = CGPoint(x: body.pos.x + dir * 200 * s, y: body.pos.y + 30 * s)
+        queue = [Task(kind: .face(ahead.x)),
+                 Task(kind: .focus({ ahead }, .stand, .alert, [], ramp: true), duration: .random(in: 0.6...1.0)),
+                 Task(kind: .call { [weak self] in self?.anim.startle(); self?.out?.emit(.bang) }),
+                 Task.hold(.crouch, 0.25...0.4, .stalking, .wiggle)]
+        if Int.random(in: 0..<3) == 0 { queue.insert(Task(kind: .say(.zoomies)), at: 0) }
+        var x = body.pos.x
+        for i in 0..<Int.random(in: 3...6) {
+            x = l.span.clamp(x + dir * .random(in: 260...620) * s, inset: 20 * s)
+            queue.append(Task(kind: .walk(x: x, gait: i % 2 == 0 ? .sprint : .run)))
+            if Int.random(in: 0..<3) == 0 { queue.append(Task(kind: .hop(.random(in: 420...600)))) }
+            dir = -dir
+        }
+        queue += [Task(kind: .particle(.dust)), Task.hold(.stand, 0.4...0.6, .alert), Task.hold(.sit, 1...2, .alert)]
+        if Int.random(in: 0..<3) == 0 { queue.append(Task(kind: .text(["Non è successo niente.", "Dovevo farlo.", "Ok. Ora sto bene."].randomElement()!))) }
+        queue.append(Task.hold(.groom, 2...4, .relaxed, .lick))
+    }
+
+    /// Front paws far forward, back up high, the big yawn at the bottom of it.
+    private func planStretch() {
+        queue = [Task.hold(.stand, 0.4...0.7, .relaxed),
+                 Task.hold(.stretch, 0.9...1.1, .happy),
+                 Task.hold(.stretch, 1.2...1.6, .happy, .yawn),
+                 Task.hold(.stretch, 0.4...0.6, .happy),
+                 Task.hold(.stand, 0.5...0.8, .relaxed),
+                 Task.hold(.sit, 1...2, .wrapped, .lick)]
+    }
+
+    /// Lick the paw, wipe the face, again, again.
+    private func planFaceWash() {
+        queue = [Task.hold(.sit, 0.6...1, .relaxed),
+                 Task.hold(.groom, 4...7, .relaxed, .faceWash),
+                 Task.hold(.sit, 1...2, .wrapped)]
+    }
+
+    /// Stares at an empty spot in the air, very hard. Then either bolts or pounces on nothing.
+    private func planGhost(_ world: World) {
+        guard let l = body.currentLedge(world) else { return }
+        let s = body.scale
+        let side: CGFloat = Bool.random() ? body.facing : -body.facing
+        let spot = CGPoint(x: body.pos.x + side * .random(in: 120...320) * s, y: body.pos.y + .random(in: 70...240) * s)
+        queue = [Task(kind: .face(spot.x)),
+                 Task(kind: .focus({ spot }, .sit, .alert, [], ramp: true), duration: .random(in: 2.8...4.6))]
+        if Bool.random() {
+            // Something only it can see: it bolts, then stares back from a safe distance.
+            let away = l.span.clamp(body.pos.x - side * .random(in: 260...480) * s, inset: 20 * s)
+            queue += [Task(kind: .call { [weak self] in self?.anim.startle(); self?.out?.emit(.bang) }),
+                      Task(kind: .hop(560)),
+                      Task(kind: .walk(x: away, gait: .sprint)),
+                      Task(kind: .focus({ spot }, .stand, .alert, [], ramp: false), duration: .random(in: 1.5...2.5))]
+            if Bool.random() { queue.append(Task(kind: .text(["C'era qualcosa.", "L'hai visto anche tu?", "Lì. Proprio lì."].randomElement()!))) }
+            queue.append(Task.hold(.sit, 2...3, .annoyed))
+        } else {
+            // ... or it decides it was prey: butt wiggle, then the pounce, on nothing.
+            let ground = CGPoint(x: l.span.clamp(body.pos.x + side * min(abs(spot.x - body.pos.x), 180 * s), inset: 20 * s), y: l.y)
+            queue += [Task(kind: .focus({ ground }, .crouch, .stalking, [.wiggle], ramp: false), duration: .random(in: 1.2...2.0)),
+                      Task(kind: .pounceAt({ ground })),
+                      Task(kind: .particle(.question)),
+                      Task.hold(.sit, 1...1.5, .relaxed)]
+            if Bool.random() { queue.append(Task(kind: .text(["Niente. Di nuovo.", "Giuro che c'era.", "Era un fantasma. Piccolo."].randomElement()!))) }
+            queue.append(Task.hold(.groom, 2...3, .relaxed, .lick))
+        }
+    }
+
+    /// On its back, rubbing side to side, over onto the other side, and again.
+    private func planRoll() {
+        let s = body.scale
+        queue = [Task.hold(.sit, 0.5...0.8, .happy),
+                 Task.hold(.belly, 2...3, .happy, .roll),
+                 Task(kind: .face(body.pos.x - body.facing * 50 * s)),
+                 Task(kind: .particle(.dust)),
+                 Task.hold(.belly, 2...3, .happy, .roll),
+                 Task.hold(.belly, 2...5, .happy),
+                 Task.hold(.stand, 0.5...0.8, .relaxed)]
+    }
+
+    /// Nose up, eyes squeezed, and: etciù. Sometimes twice.
+    private func planSneeze() {
+        let sneeze: [Task] = [Task.hold(.sit, 0.7...1.0, .alert, .preSneeze),
+                              Task(kind: .call { [weak self] in self?.anim.sneeze(); self?.out?.emit(.dust) }),
+                              Task.hold(.sit, 0.35...0.45, .alert)]
+        queue = [Task.hold(.sit, 0.4...0.6, .alert)] + sneeze
+        if Int.random(in: 0..<3) == 0 { queue += sneeze }
+        if Bool.random() { queue.append(Task(kind: .text(["Etciù.", "Polvere. Ovunque.", "Non guardarmi."].randomElement()!))) }
+        queue.append(Task.hold(.sit, 1...1.5, .annoyed, .lick))
+    }
+
     // MARK: Scenes (visitors directed by SceneDirector)
 
     private var sceneBusy: Bool { if case .dragged = body.loco { return true }; return false }
@@ -993,6 +1159,115 @@ final class Brain {
         goal = nil
         queue = wakeUpFirst()
         playUntil = time + seconds
+    }
+
+    /// Keep still and follow something with the eyes, in the given posture.
+    func sceneTrack(_ target: @escaping () -> CGPoint?, pose: PoseKind = .sit, tail: TailStyle = .alert,
+                    flourish: Flourish = [], for seconds: CGFloat) {
+        guard !sceneBusy else { return }
+        goal = nil
+        queue = wakeUpFirst() + [Task(kind: .focus(target, pose, tail, flourish, ramp: false), duration: seconds)]
+    }
+
+    /// Sit up and bat at something just above the head with a front paw.
+    func sceneSwat(_ target: @escaping () -> CGPoint?, then: (() -> Void)? = nil) {
+        guard !sceneBusy, body.isGrounded else { return }
+        goal = nil
+        queue = [Task(kind: .focus(target, .wave, .stalking, [.wavePaw], ramp: false), duration: 1.3)]
+        if let then { queue.append(Task(kind: .call(then))) }
+        queue.append(Task(kind: .focus(target, .lookUp, .alert, [], ramp: false), duration: 30))
+    }
+
+    /// Crouch, wiggle, and leap at something from where it stands.
+    func scenePounce(_ target: @escaping () -> CGPoint?, then: (() -> Void)? = nil) {
+        guard !sceneBusy, body.isGrounded else { return }
+        goal = nil
+        queue = [Task(kind: .focus(target, .crouch, .stalking, [.wiggle], ramp: false), duration: .random(in: 0.7...1.1)),
+                 Task(kind: .sound(.chatter)), Task(kind: .pounceAt(target))]
+        if let then { queue.append(Task(kind: .call(then))) }
+    }
+
+    /// Sit holding something down under a front paw, pleased with itself.
+    func sceneProud(_ line: String, for seconds: CGFloat) {
+        guard !sceneBusy else { return }
+        goal = nil
+        queue = [Task(kind: .sound(.trill)), Task(kind: .text(line)), Task.hold(.sit, seconds...seconds, .happy)]
+    }
+
+    /// The Mind decided what to do. Idle poses give way at once, anything else finishes first.
+    func intend(_ i: CatIntent, app: String) {
+        guard !isAsleep else { return }
+        intent = (i, app)
+        if goal == nil, case .hold(let k, _, _)? = queue.first?.kind, [.sit, .loaf, .stand, .lookUp].contains(k) {
+            queue.removeAll()
+        }
+    }
+
+    /// The top of a window of the given app, if the cat can see one.
+    private func spot(of app: String, _ world: World) -> CGPoint? {
+        guard !app.isEmpty else { return nil }
+        let ledges = world.ledges.filter { l in
+            guard let id = l.windowID, let w = world.window(id) else { return false }
+            return w.owner == app
+        }
+        guard let l = ledges.randomElement() else { return nil }
+        return CGPoint(x: l.span.clamp(l.span.lo + l.span.length * .random(in: 0.25...0.75)), y: l.y)
+    }
+
+    /// Turns a decision into tasks. False when it cannot be done right now.
+    private func follow(_ i: CatIntent, app: String, _ world: World) -> Bool {
+        let s = body.scale
+        switch i {
+        case .sleep:
+            planSleep(world)
+        case .napOnApp:
+            guard let p = spot(of: app, world) else { planSleep(world); return true }
+            goal = Goal(target: { p }, gait: .walk, radius: 40 * s, onArrive: {
+                [Task.hold(.knead, 2...4, .happy, .knead), Task.hold(.loaf, 2...4, .wrapped),
+                 Task.hold(.sleep, self.userAway ? 300...900 : 90...420, .wrapped),
+                 Task.hold(.stretch, 1.4...2, .happy), Task.hold(.sit, 1...1.4, .relaxed, .yawn)]
+            }, deadline: time + 60)
+        case .explore:
+            if let p = spot(of: app, world) {
+                goal = Goal(target: { p }, gait: .trot, radius: 40 * s, onArrive: {
+                    [Task.hold(.stand, 1...2, .alert), Task.hold(.sit, 3...8, .relaxed)]
+                }, deadline: time + 50)
+            } else {
+                planExplore(world)
+            }
+        case .huntPointer:
+            guard isCursorHuntable(world) else { return false }
+            queue = [Task(kind: .stalk, duration: .random(in: 1.2...2.6))]
+        case .mischief:
+            guard mischiefAllowed, body.windowUnderneath != nil, out?.canNudge == true, time - lastMischief > 300 else { return false }
+            planMischief(world)
+        case .askFood:
+            planAsk(.hungry)
+        case .askCuddles:
+            guard !userAway else { return false }
+            planAsk(.idle)
+        case .groom:
+            queue = [Task.hold(.groom, 3...7, .relaxed, .lick)]
+        case .loaf:
+            queue = [Task.hold(.loaf, 8...30, .wrapped)]
+        case .zoomies:
+            planZoomies(world)
+        case .chaseTail:
+            queue = [Task(kind: .spin, duration: .random(in: 2.2...3.6)), Task(kind: .particle(.question)),
+                     Task.hold(.sit, 1...1.6, .relaxed)]
+        case .scratch:
+            guard let sp = scratchSpot(world) else { return false }
+            queue = [Task(kind: .walk(x: sp.x, gait: .walk)), Task(kind: .face(sp.wallX)),
+                     Task.hold(.scratch, 2.5...4, .happy, .knead), Task.hold(.sit, 1...2, .happy)]
+        case .hangFromMenuBar:
+            guard let m = Navigator.menuBarHang(for: body, in: world) else { return false }
+            queue = [Task(kind: .walk(x: m.takeoffX, gait: .walk)), Task(kind: .jump(m))]
+        case .watchHuman:
+            queue = [Task(kind: .face(out?.cursor.x ?? body.pos.x)), Task.hold(.sit, 3...7, .alert)]
+        case .stretch:
+            queue = [Task.hold(.stretch, 1.4...2, .happy), Task.hold(.sit, 1...1.4, .relaxed, .yawn)]
+        }
+        return true
     }
 
     func sceneEnded() {

@@ -6,7 +6,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 let coatsMode = CommandLine.arguments.count > 2
-let cell = 200, cols = coatsMode ? 8 : 6
+let cell = 200, cols = coatsMode ? CatCoat.all.count : 6
 let items: [(PoseKind, CatCoat, Bool)] = coatsMode
     ? CatCoat.all.map { (.sit, $0, false) } + CatCoat.all.map { (.stand, $0, false) }
       + CatCoat.all.map { (.sit, $0, true) } + CatCoat.all.map { (.stand, $0, true) }

@@ -3,7 +3,8 @@ import SoundAnalysis
 import Speech
 
 /// The microphone: sounds through SoundAnalysis, words through on device speech
-/// recognition in Italian. Audio is analysed as it streams and never kept.
+/// recognition in Italian. Opened only for a few seconds at a time (see Attention).
+/// Audio is analysed as it streams and never kept.
 final class HearingSense: NSObject, SNResultsObserving {
     var onEvent: ((CatEvent) -> Void)?
     var name = "Nerone"
@@ -26,11 +27,24 @@ final class HearingSense: NSObject, SNResultsObserving {
     /// Speech recognition only listens while SoundAnalysis hears someone talking.
     private var speechOpenUntil = Date.distantPast
     private var preroll: [AVAudioPCMBuffer] = []
+    private var openUntil = Date.distantPast
+
+    /// Opens the microphone for a few seconds, ready for words straight away, then closes it.
+    func listen(for seconds: TimeInterval) {
+        let until = Date().addingTimeInterval(seconds)
+        if until > openUntil { openUntil = until }
+        requestLock.withLock { speechOpenUntil = max(speechOpenUntil, until) }
+        start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.1) { [weak self] in
+            guard let self, Date() >= self.openUntil else { return }
+            self.stop()
+        }
+    }
 
     /// Ignore what we hear for a moment, so the cat does not react to its own meow.
     func mute(for seconds: TimeInterval) { mutedUntil = Date().addingTimeInterval(seconds) }
 
-    func start() {
+    private func start() {
         guard !running else { return }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] ok in
             guard ok else { return }
@@ -53,7 +67,7 @@ final class HearingSense: NSObject, SNResultsObserving {
     }
 
     private func begin(speech: Bool) {
-        guard !running else { return }
+        guard !running, Date() < openUntil else { return }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { return }
@@ -165,7 +179,7 @@ final class HearingSense: NSObject, SNResultsObserving {
         guard let r = result as? SNClassificationResult else { return }
         let top = r.classifications.prefix(3).filter { $0.confidence > 0.55 }.map { $0.identifier.lowercased() }
         if r.classifications.prefix(3).contains(where: { $0.identifier.lowercased().contains("speech") && $0.confidence > 0.4 }) {
-            requestLock.withLock { speechOpenUntil = Date().addingTimeInterval(4) }
+            requestLock.withLock { speechOpenUntil = max(speechOpenUntil, Date().addingTimeInterval(4)) }
         }
         DispatchQueue.main.async { self.classified(top) }
     }

@@ -18,7 +18,7 @@ struct SettingsView: View {
     @ObservedObject var settings: CatSettings
     let readout: CatReadout
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var hasAgnesKey = AgnesKey.load() != nil
+    @State private var keyTick = 0
     @State private var pastedKey = ""
     @State private var keyNote = ""
 
@@ -47,16 +47,16 @@ struct SettingsView: View {
             brainSection
             Section {
                 sense("Vista", "camera", $settings.sight,
-                      "Con la fotocamera si accorge quando sei davanti al Mac, ti guarda, e se lo saluti con la mano ti risponde. Se te ne vai, va a dormire.")
+                      "La fotocamera si accende solo per pochi secondi: quando torni al Mac, quando clicchi il gatto e ogni tanto per curiosità. Se ti vede ti guarda, e se lo saluti con la mano ti risponde. Se ti allontani lo capisce da tastiera e mouse, senza fotocamera.")
                 sense("Udito", "ear", $settings.hearing,
-                      "Con il microfono si spaventa se batti le mani, soffia ai cani, muove la coda a tempo di musica e arriva quando lo chiami per nome. Capisce anche «giù», «pappa», «nanna», «bravo».")
+                      "Il microfono si accende solo per una decina di secondi, quando clicchi il gatto o torni al Mac: in quel momento chiamalo per nome o digli «giù», «pappa», «nanna», «bravo». Se nel frattempo batti le mani si spaventa, se sente un cane soffia, se c'è musica muove la coda.")
                 sense("Occhi sullo schermo", "eye", $settings.screenEyes,
                       "Ogni tanto guarda cosa c'è sullo schermo: se vede un uccellino o un pesce si mette in caccia, se legge «tonno» arriva, se vede un cane soffia.")
                 if settings.screenEyes && !readout.screenAllowed() {
                     permissionHint("Serve il permesso di registrazione dello schermo.", "Privacy_ScreenCapture")
                 }
-                sense("Pensieri con Apple Intelligence", "sparkles", $settings.aiThoughts,
-                      "I pensieri li scrive il modello di Apple sul Mac, a partire da quello che succede. Stato: \(readout.aiStatus()).")
+                sense("Carattere e pensieri con l'IA", "sparkles", $settings.aiThoughts,
+                      "Il gatto decide da sé cosa fare e scrive i suoi pensieri con il cervello scelto qui sopra. Apple Intelligence: \(readout.aiStatus()).")
                 sense("Meteo", "cloud.sun", $settings.weather,
                       "Con la tua posizione approssimativa sa che tempo fa fuori: con la pioggia è malinconico, al sole si stende. \(readout.weather())")
                 sense("Calendario", "calendar", $settings.calendar,
@@ -71,7 +71,7 @@ struct SettingsView: View {
             } header: {
                 Text("I sensi")
             } footer: {
-                Text("Tutto quello che vede e sente resta su questo Mac e non viene salvato, tranne quando scegli Agnes: in quel caso i pensieri e, se lo attivi, l'immagine dello schermo vanno ad Agnes.")
+                Text("Tutto quello che vede e sente resta su questo Mac e non viene salvato, tranne quando scegli un cervello nel cloud: in quel caso la situazione da cui nasce un pensiero o una decisione va a DeepSeek o ad Agnes, e con Agnes, se lo attivi, anche l'immagine ridotta dello schermo.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Come sta") {
@@ -112,34 +112,45 @@ struct SettingsView: View {
     }
 
     private var brainSection: some View {
-        Section("Cervello") {
-            Picker("Pensieri scritti da", selection: $settings.brain) {
+        Section {
+            Picker("Pensa e decide con", selection: $settings.brain) {
                 Text("Apple Intelligence, sul Mac").tag("apple")
+                Text("DeepSeek, nel cloud").tag("deepseek")
                 Text("Agnes, nel cloud").tag("agnes")
             }
-            Label(hasAgnesKey ? "Chiave Agnes presente nel portachiavi" : "Manca la chiave Agnes",
-                  systemImage: hasAgnesKey ? "key.fill" : "key.slash")
-                .foregroundStyle(hasAgnesKey ? Color.secondary : Color.orange)
-            Button("Importa la chiave dal vault (~/.secrets)") {
-                let ok = AgnesKey.importFromVault()
-                hasAgnesKey = AgnesKey.load() != nil
-                keyNote = ok ? "Chiave importata." : "Non ho trovato AGNES_API_KEY in ~/.secrets/agnes-ai.env."
-            }
-            HStack {
-                SecureField("Oppure incolla la chiave", text: $pastedKey)
-                Button("Salva") {
-                    AgnesKey.save(pastedKey)
-                    pastedKey = ""
-                    hasAgnesKey = AgnesKey.load() != nil
-                    keyNote = hasAgnesKey ? "Chiave salvata." : "Chiave non salvata."
+            if let cloud = CloudBrain(rawValue: settings.brain) {
+                let key = cloud == .agnes ? VaultKey.agnes : VaultKey.deepSeek
+                let title = cloud == .agnes ? "Agnes" : "DeepSeek"
+                let present = keyTick >= 0 && key.load() != nil
+                Label(present ? "Chiave \(title) presente nel portachiavi" : "Manca la chiave \(title)",
+                      systemImage: present ? "key.fill" : "key.slash")
+                    .foregroundStyle(present ? Color.secondary : Color.orange)
+                Button("Importa la chiave dal vault (~/.secrets)") {
+                    let ok = key.importFromVault()
+                    keyTick += 1
+                    keyNote = ok ? "Chiave importata." : "Non ho trovato \(key.variable) in ~/.secrets/\(key.file)."
                 }
-                .disabled(pastedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            if !keyNote.isEmpty {
-                Text(keyNote).font(.footnote).foregroundStyle(.secondary)
+                HStack {
+                    SecureField("Oppure incolla la chiave", text: $pastedKey)
+                    Button("Salva") {
+                        key.save(pastedKey)
+                        pastedKey = ""
+                        keyTick += 1
+                        keyNote = key.load() != nil ? "Chiave salvata." : "Chiave non salvata."
+                    }
+                    .disabled(pastedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if !keyNote.isEmpty {
+                    Text(keyNote).font(.footnote).foregroundStyle(.secondary)
+                }
             }
             sense("Agnes guarda lo schermo", "eye.trianglebadge.exclamationmark", $settings.agnesVision,
-                  "Ogni qualche minuto un'immagine dello schermo, ridotta, esce dal Mac e va ad Agnes, che risponde con un pensiero e con quello che ha visto. Funziona solo con gli occhi sullo schermo accesi.")
+                  "Ogni qualche minuto un'immagine dello schermo, ridotta, esce dal Mac e va ad Agnes, che risponde con un pensiero e con quello che ha visto. Funziona solo con gli occhi sullo schermo accesi e la chiave Agnes nel portachiavi, qualunque cervello tu abbia scelto sopra.")
+        } header: {
+            Text("Cervello")
+        } footer: {
+            Text("Con il carattere acceso, ogni minuto o due il gatto guarda l'ora, i suoi bisogni, le app aperte e cosa è successo prima, e decide da sé cosa fare: dormire sulla finestra che preferisce, cacciare, fare un dispetto, chiederti la pappa. Se il cervello nel cloud non risponde usa Apple Intelligence, e senza nessuno dei due fa di testa sua come sempre.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 

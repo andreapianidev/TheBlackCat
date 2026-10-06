@@ -248,8 +248,10 @@ enum CatRig {
 
     private static func earTriangles(_ p: CatPose) -> [(CGPoint, CGPoint, CGPoint)] {
         let e = p.earBack
+        // The far ear can swivel on its own: the tip turns back and drops a little.
+        let f = max(e, p.earSwivel * 0.55)
         return [
-            (pt(-8.5, 4.5), pt(-1.5, 8.2), pt(-7 - 5 * e, 16 - 8 * e)),
+            (pt(-8.5, 4.5), pt(-1.5, 8.2), pt(-7 - 5 * f - 2 * p.earSwivel, 16 - 8 * f)),
             (pt(1.5, 7.8), pt(9.5, 4.2), pt(7.5 + 5 * e, 16.5 - 8 * e)),
         ]
     }
@@ -353,7 +355,12 @@ enum CatRig {
             line(ctx, [pt(-10.5, -0.5), pt(-6.5, -1.4)], 1.3, ink)
             line(ctx, [pt(-10.5, -3.6), pt(-6.5, -3.8)], 1.3, ink)
         }
-        if let w = coat.bib {
+        if let w = coat.bib, coat.cartoon {
+            // Wide white muzzle up to the cheeks.
+            ctx.setFillColor(w)
+            ctx.fillEllipse(in: oval(pt(5.6, -5.4), 19, 11))
+            ctx.fillEllipse(in: oval(pt(1.5, -9), 14, 6))
+        } else if let w = coat.bib {
             ctx.setFillColor(w)
             ctx.fillEllipse(in: oval(pt(6.4, -4.6), 12.5, 8.6))
             ctx.fillEllipse(in: oval(pt(3.5, -7.6), 10, 5.5))
@@ -365,6 +372,15 @@ enum CatRig {
             for (a, b, c) in earTriangles(p) {
                 ctx.move(to: a); ctx.addLine(to: c); ctx.addLine(to: b); ctx.closePath()
                 ctx.fillPath()
+            }
+        }
+        if coat.cartoon, let w = coat.bib {
+            // Cheek tufts sticking out below the jaw, white like the muzzle.
+            ctx.setBlendMode(.normal)
+            ctx.setFillColor(w)
+            for (base, tip) in [(pt(-4, -8.5), pt(-9.5, -13.5)), (pt(1, -10), pt(-2.5, -15.5))] {
+                ctx.move(to: pt(base.x - 2.6, base.y + 1.2)); ctx.addLine(to: tip); ctx.addLine(to: pt(base.x + 2.6, base.y - 0.4))
+                ctx.closePath(); ctx.fillPath()
             }
         }
         if let a = coat.patchA, let b = coat.patchB {
@@ -453,8 +469,14 @@ enum CatRig {
         }
 
         ctx.setFillColor(coat.nose)
-        ctx.move(to: pt(9.6, -1.5)); ctx.addLine(to: pt(11.7, -1.5)); ctx.addLine(to: pt(10.7, -2.9)); ctx.closePath()
-        ctx.fillPath()
+        if coat.cartoon {
+            ctx.fillEllipse(in: oval(pt(11.2, -2), 6, 4.6))
+            ctx.setFillColor(white.copy(alpha: 0.6) ?? white)
+            ctx.fillEllipse(in: circle(pt(10.3, -1.1), 0.75))
+        } else {
+            ctx.move(to: pt(9.6, -1.5)); ctx.addLine(to: pt(11.7, -1.5)); ctx.addLine(to: pt(10.7, -2.9)); ctx.closePath()
+            ctx.fillPath()
+        }
         if p.mouthOpen > 0.05 {
             let mh = 4.6 * p.mouthOpen
             ctx.setFillColor(mouth)
@@ -561,7 +583,11 @@ enum CatRig {
         ctx.setFillColor(coat.nose)
         ctx.setStrokeColor(black)
         ctx.setLineWidth(0.7)
-        ctx.move(to: pt(9.3, -1.4)); ctx.addLine(to: pt(12.1, -1.4)); ctx.addLine(to: pt(10.7, -3.1)); ctx.closePath()
+        if coat.cartoon {
+            ctx.addEllipse(in: oval(pt(11.4, -2), 6.4, 5))
+        } else {
+            ctx.move(to: pt(9.3, -1.4)); ctx.addLine(to: pt(12.1, -1.4)); ctx.addLine(to: pt(10.7, -3.1)); ctx.closePath()
+        }
         ctx.drawPath(using: .fillStroke)
         if p.mouthOpen > 0.05 {
             let mh = 5.2 * p.mouthOpen

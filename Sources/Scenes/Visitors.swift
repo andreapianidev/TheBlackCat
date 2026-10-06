@@ -561,6 +561,283 @@ final class LaserDot: Visitor {
     }
 }
 
+// MARK: - Spider
+
+/// A small spider lowering itself on a silk thread from a window edge (or from somewhere out of sight above).
+final class Spider: Visitor {
+    /// Where the thread is tied, in global coordinates.
+    let anchor: CGPoint
+    /// The thread fades out at the top when it is not tied to anything visible.
+    let fadeTop: Bool
+    /// How far below the anchor the spider wants to be, and how fast it gets there.
+    var goalDrop: CGFloat
+    var climbSpeed: CGFloat
+    private(set) var drop: CGFloat = 0
+    /// Sideways swing on the thread, a damped spring.
+    private var swing: CGFloat = 0
+    private var swingV: CGFloat = 0
+    private var fright: CGFloat = 0
+    private let maxDrop: CGFloat
+
+    override var bounds: CGRect { CGRect(x: -60, y: -14, width: 120, height: maxDrop / scale + 28) }
+
+    init(anchor: CGPoint, maxDrop: CGFloat, fadeTop: Bool, scale: CGFloat) {
+        self.anchor = anchor
+        self.maxDrop = maxDrop
+        self.fadeTop = fadeTop
+        goalDrop = maxDrop
+        climbSpeed = 46 * scale
+        super.init(at: anchor, scale: scale)
+        alpha = fadeTop ? 0 : 1
+    }
+
+    /// Batted by a paw: it swings away and scurries up a bit.
+    func hit(dir: CGFloat) {
+        swingV += dir * 150 * scale
+        fright = 1.2
+    }
+
+    var hanging: Bool { abs(drop - goalDrop) < 1 }
+
+    override func update(_ dt: CGFloat) {
+        super.update(dt)
+        let step = climbSpeed * dt
+        drop += max(-step, min(step, goalDrop - drop))
+        swingV += (-swing * 22 - swingV * 1.6) * dt
+        swing += swingV * dt
+        swing = swing.clamped(-48 * scale, 48 * scale)
+        fright = max(0, fright - dt)
+        pos = CGPoint(x: anchor.x + swing, y: anchor.y - drop)
+        if fadeTop { alpha = min(1, alpha + dt * 1.6) }
+    }
+
+    override func draw(_ ctx: CGContext) {
+        // Silk, from the spider up to the anchor.
+        let top = CGPoint(x: (anchor.x - pos.x) / scale, y: (anchor.y - pos.y) / scale)
+        let start = CGPoint(x: 0, y: 4)
+        if fadeTop, let g = CGGradient(colorsSpace: nil, colors: [Self.c(0.92, 0.92, 0.95, 0.75), Self.c(0.92, 0.92, 0.95, 0)] as CFArray,
+                                       locations: [0.55, 1]) {
+            ctx.saveGState()
+            ctx.setLineWidth(0.7)
+            ctx.move(to: start); ctx.addLine(to: top)
+            ctx.replacePathWithStrokedPath()
+            ctx.clip()
+            ctx.drawLinearGradient(g, start: start, end: top, options: [])
+            ctx.restoreGState()
+        } else {
+            ctx.setStrokeColor(Self.c(0.92, 0.92, 0.95, 0.75))
+            ctx.setLineWidth(0.7)
+            ctx.move(to: start); ctx.addLine(to: top)
+            ctx.strokePath()
+        }
+        // Eight legs, bent like brackets, scrabbling when scared.
+        let body = Self.c(0.2, 0.15, 0.13), leg = Self.c(0.16, 0.12, 0.1)
+        ctx.setStrokeColor(leg)
+        ctx.setLineWidth(1.1)
+        let speed: CGFloat = fright > 0 ? 30 : 3
+        for side in [-1.0, 1.0] as [CGFloat] {
+            for k in 0..<4 {
+                let kk = CGFloat(k)
+                let jig = sin(t * speed + kk * 1.7 + side) * (fright > 0 ? 1.6 : 0.5)
+                let root = CGPoint(x: side * 2.5, y: 1.5 - kk * 1.3)
+                let knee = CGPoint(x: side * (6.5 + kk * 0.6), y: 5 - kk * 2.6 + jig)
+                let foot = CGPoint(x: side * (8.5 + kk * 0.3), y: -1 - kk * 2.8 + jig * 0.5)
+                ctx.move(to: root); ctx.addLine(to: knee); ctx.addLine(to: foot)
+            }
+        }
+        ctx.strokePath()
+        ctx.setFillColor(body)
+        ctx.fillEllipse(in: Self.oval(0, -3.5, 8, 9))
+        ctx.fillEllipse(in: Self.oval(0, 2.2, 5.4, 4.6))
+        // A pale mark on the back, and two glints for eyes.
+        ctx.setFillColor(Self.c(0.55, 0.42, 0.32, 0.8))
+        ctx.fillEllipse(in: Self.oval(0, -3, 2.4, 3.6))
+        ctx.setFillColor(Self.c(1, 1, 1, 0.85))
+        ctx.fillEllipse(in: Self.oval(-1, 1.6, 0.9, 0.9))
+        ctx.fillEllipse(in: Self.oval(1, 1.6, 0.9, 0.9))
+    }
+}
+
+// MARK: - Falling leaf
+
+/// An autumn leaf: zigzags down, then the wind pushes it along the floor.
+final class Leaf: Visitor {
+    enum State { case falling, resting, skitter, pinned, blown }
+    private(set) var state = State.falling
+    var floorY: CGFloat
+    private var vel = CGVector.zero
+    private var spin: CGFloat = 0
+    private var flutter: CGFloat = 0
+    private let seed = CGFloat.random(in: 0...6)
+    private let colors: (CGColor, CGColor) = [
+        (Visitor.c(0.93, 0.55, 0.16), Visitor.c(0.66, 0.32, 0.08)),
+        (Visitor.c(0.8, 0.24, 0.12), Visitor.c(0.52, 0.12, 0.06)),
+        (Visitor.c(0.86, 0.68, 0.2), Visitor.c(0.6, 0.44, 0.1)),
+    ].randomElement()!
+
+    override var bounds: CGRect { CGRect(x: -20, y: -6, width: 40, height: 36) }
+
+    init(at p: CGPoint, floorY: CGFloat, scale: CGFloat) {
+        self.floorY = floorY
+        super.init(at: p, scale: scale)
+    }
+
+    var onFloor: Bool { state == .resting || state == .pinned }
+
+    /// Tossed up by a pounce: it flutters down again.
+    func toss(dx: CGFloat) {
+        state = .falling
+        vel = CGVector(dx: dx, dy: 230 * scale)
+    }
+
+    /// A gust along the floor.
+    func gust(dir: CGFloat) {
+        state = .skitter
+        vel = CGVector(dx: dir * .random(in: 190...280) * scale, dy: 70 * scale)
+    }
+
+    /// Held under a paw.
+    func pin(at p: CGPoint) {
+        state = .pinned
+        vel = .zero
+        pos = p
+        spin = 0.05
+    }
+
+    /// The last gust: up and away.
+    func blowAway(dir: CGFloat) {
+        state = .blown
+        vel = CGVector(dx: dir * 230 * scale, dy: 170 * scale)
+    }
+
+    override func update(_ dt: CGFloat) {
+        super.update(dt)
+        let s = scale
+        switch state {
+        case .falling:
+            // A falling leaf rocks like a pendulum: fast and flat at the bottom of each swing.
+            vel.dy = max(vel.dy - 900 * s * dt, -75 * s)
+            vel.dy += cos(t * 2.4 + seed).magnitude * 30 * s * dt
+            vel.dx *= exp(-1.2 * dt)
+            pos.x += (vel.dx + sin(t * 2.4 + seed) * 70 * s) * dt
+            pos.y += vel.dy * dt
+            spin = sin(t * 2.4 + seed) * 0.7
+            flutter = t * 2.4
+            if pos.y <= floorY {
+                pos.y = floorY
+                state = .resting
+                vel = .zero
+            }
+        case .skitter:
+            vel.dy -= 900 * s * dt
+            pos.x += vel.dx * dt
+            pos.y += vel.dy * dt
+            spin += vel.dx * dt / (6 * s)
+            flutter += dt * 9
+            if pos.y <= floorY {
+                pos.y = floorY
+                vel.dy = abs(vel.dx) > 60 * s && Int.random(in: 0..<8) == 0 ? 60 * s : 0
+                vel.dx *= exp(-2.2 * dt)
+                if abs(vel.dx) < 8 * s { state = .resting; vel = .zero }
+            }
+        case .resting, .pinned:
+            spin *= exp(-6 * dt)
+            flutter = 0
+        case .blown:
+            vel.dy += sin(t * 3) * 120 * s * dt
+            pos.x += vel.dx * dt
+            pos.y += vel.dy * dt
+            spin += dt * 5
+            flutter += dt * 6
+        }
+        if vel.dx != 0 { facing = vel.dx > 0 ? 1 : -1 }
+    }
+
+    override func draw(_ ctx: CGContext) {
+        ctx.translateBy(x: 0, y: onFloor ? 1.5 : 10)
+        ctx.rotate(by: spin)
+        // Turning over in the air: squash across the midrib.
+        ctx.scaleBy(x: 1, y: max(0.25, abs(cos(flutter))))
+        let (fill, vein) = colors
+        let leaf = CGMutablePath()
+        leaf.move(to: CGPoint(x: -11, y: 0))
+        leaf.addQuadCurve(to: CGPoint(x: 11, y: 0), control: CGPoint(x: 0, y: 11))
+        leaf.addQuadCurve(to: CGPoint(x: -11, y: 0), control: CGPoint(x: 0, y: -11))
+        ctx.setFillColor(fill)
+        ctx.addPath(leaf)
+        ctx.fillPath()
+        ctx.setStrokeColor(vein)
+        ctx.setLineWidth(0.8)
+        ctx.move(to: CGPoint(x: -14, y: -0.5)); ctx.addLine(to: CGPoint(x: 9, y: 0))
+        for x in [-5.0, 0.0, 5.0] as [CGFloat] {
+            ctx.move(to: CGPoint(x: x - 1, y: 0)); ctx.addLine(to: CGPoint(x: x + 2.5, y: 3.6))
+            ctx.move(to: CGPoint(x: x - 1, y: 0)); ctx.addLine(to: CGPoint(x: x + 2.5, y: -3.6))
+        }
+        ctx.strokePath()
+    }
+}
+
+// MARK: - Firefly
+
+/// A firefly on a summer evening: drifts about, its tail lighting up and going dark.
+final class Firefly: Visitor {
+    var target: CGPoint
+    var resting = false
+    private let seed = CGFloat.random(in: 0...20)
+    private var glow: CGFloat = 0
+    private var lit = Bool.random()
+    private var nextToggle = CGFloat.random(in: 0.2...1.2)
+
+    override var bounds: CGRect { CGRect(x: -14, y: -14, width: 28, height: 28) }
+
+    init(at p: CGPoint, target: CGPoint, scale: CGFloat) {
+        self.target = target
+        super.init(at: p, scale: scale)
+    }
+
+    /// Dart away from something.
+    func dodge(from p: CGPoint) {
+        let dx: CGFloat = pos.x >= p.x ? 1 : -1
+        target = CGPoint(x: pos.x + dx * 90 * scale, y: pos.y + 110 * scale)
+        lit = false
+    }
+
+    override func update(_ dt: CGFloat) {
+        super.update(dt)
+        let s = scale
+        let wobble = resting ? CGPoint.zero
+            : CGPoint(x: sin(t * 0.9 + seed) * 34 * s + sin(t * 2.7 + seed * 2) * 9 * s,
+                      y: cos(t * 0.7 + seed) * 22 * s + sin(t * 3.1 + seed) * 6 * s)
+        let k = min(1, dt * (resting ? 8 : 1.1))
+        let dx = target.x + wobble.x - pos.x
+        pos.x += dx * k
+        pos.y += (target.y + wobble.y - pos.y) * k
+        if abs(dx) > 2 { facing = dx > 0 ? 1 : -1 }
+        nextToggle -= dt
+        if nextToggle <= 0 {
+            lit.toggle()
+            nextToggle = lit ? .random(in: 0.5...1.3) : .random(in: 0.3...1.6)
+        }
+        if resting { lit = true }
+        glow += ((lit ? 1 : 0) - glow) * min(1, dt * 7)
+    }
+
+    override func draw(_ ctx: CGContext) {
+        if glow > 0.02, let g = CGGradient(colorsSpace: nil, colors: [Self.c(0.86, 1, 0.38, 0.75 * glow), Self.c(0.86, 1, 0.38, 0)] as CFArray,
+                                            locations: [0, 1]) {
+            ctx.drawRadialGradient(g, startCenter: CGPoint(x: -2.5, y: 0), startRadius: 0,
+                                   endCenter: CGPoint(x: -2.5, y: 0), endRadius: 9, options: [])
+        }
+        ctx.setFillColor(Self.c(0.95, 1, 0.6, 0.4 + 0.6 * glow))
+        ctx.fillEllipse(in: Self.oval(-2.5, 0, 3.6, 2.8))
+        ctx.setFillColor(Self.c(0.18, 0.14, 0.1))
+        ctx.fillEllipse(in: Self.oval(1, 0.3, 3.6, 2.6))
+        let flap = resting ? 0.2 : abs(sin(t * 30))
+        ctx.setFillColor(Self.c(0.85, 0.85, 0.9, 0.45))
+        ctx.fillEllipse(in: Self.oval(0, 1.6 + flap * 1.4, 4.5, 1.6 + flap * 1.6))
+    }
+}
+
 // MARK: - Panels
 
 /// A see-through panel that follows one visitor around.
