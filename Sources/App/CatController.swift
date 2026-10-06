@@ -35,6 +35,8 @@ final class CatController: NSObject {
     private let notifier = Notifier()
 
     private var link: CADisplayLink?
+    private var watchdog: Timer?
+    private var lastTickWall: CFTimeInterval = 0
     private var lastTick: CFTimeInterval = 0
     private var scanTimer: Timer?
     private var slowTimer: Timer?
@@ -90,10 +92,15 @@ final class CatController: NSObject {
         resizePanel()
         if !settings.paused { panel.orderFrontRegardless() }
 
-        let link = view.displayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
-        self.link = link
+        makeDisplayLink()
         setPace(.active)
+        // If the frame loop ever stops (display asleep, screens rearranged), start it again.
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.settings.paused else { return }
+                if CACurrentMediaTime() - self.lastTickWall > 1.5 { self.makeDisplayLink(); self.setPace(self.pace) }
+            }
+        }
         trackTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.trackWindowUnderCat() }
         }
@@ -166,11 +173,30 @@ final class CatController: NSObject {
 
     // MARK: Frame
 
+    /// The frame loop follows a screen, not the cat's window: a window that wanders
+    /// off screen would otherwise stop its own display link and freeze there.
+    private func makeDisplayLink() {
+        link?.invalidate()
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(body.pos) }) ?? NSScreen.main ?? NSScreen.screens.first
+        guard let l = screen?.displayLink(target: self, selector: #selector(tick(_:))) ?? Optional(view.displayLink(target: self, selector: #selector(tick(_:)))) else { return }
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
     @objc private func tick(_ link: CADisplayLink) {
         let now = link.timestamp
         let dt = CGFloat(min(max(now - lastTick, 0), 1.0 / 12))
         lastTick = now
+        lastTickWall = CACurrentMediaTime()
         guard !settings.paused, dt > 0 else { return }
+
+        // Never lose the cat: anything that carries it off screen puts it back on a floor.
+        if !dragging, !world.bounds.isNull, !world.bounds.insetBy(dx: -40, dy: -40).contains(body.pos),
+           let floor = world.nearestFloor(to: body.pos.x) {
+            body.place(at: CGPoint(x: floor.span.clamp(body.pos.x, inset: 30 * body.scale), y: floor.y),
+                       footing: .floor(screen: floor.screen))
+            emit(.ring)
+        }
 
         let mouse = NSEvent.mouseLocation
         if mouse != lastMouse { lastMouse = mouse; lastMouseMove = now }
@@ -397,6 +423,8 @@ final class CatController: NSObject {
         system.onScreensChanged = { [weak self] in
             guard let self else { return }
             self.fullScan()
+            self.makeDisplayLink()
+            self.setPace(self.pace)
         }
         system.start()
         weather.onWeather = { [weak self] mood, _ in self?.brain.react(.weather(mood)) }
