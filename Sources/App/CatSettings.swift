@@ -41,6 +41,7 @@ final class CatSettings: ObservableObject {
     @Published var onboarded: Bool { didSet { d.set(onboarded, forKey: "onboarded") } }
     @Published var coat: String { didSet { d.set(coat, forKey: "coat") } }
     @Published var comic: Bool { didSet { d.set(comic, forKey: "comic") } }
+    @Published var scenes: Bool { didSet { d.set(scenes, forKey: "scenes") } }
     @Published var brain: String { didSet { d.set(brain, forKey: "brain") } }
     @Published var agnesVision: Bool { didSet { d.set(agnesVision, forKey: "agnesVision") } }
 
@@ -64,6 +65,7 @@ final class CatSettings: ObservableObject {
         onboarded = d.bool(forKey: "onboarded")
         coat = d.string(forKey: "coat") ?? CatCoat.black.id
         comic = d.bool(forKey: "comic")
+        scenes = d.object(forKey: "scenes") as? Bool ?? true
         brain = d.string(forKey: "brain") ?? "apple"
         agnesVision = d.bool(forKey: "agnesVision")
     }

@@ -22,6 +22,16 @@ struct CallCatIntent: AppIntent {
     }
 }
 
+struct SurpriseCatIntent: AppIntent {
+    static var title: LocalizedStringResource = "Fai succedere qualcosa al gatto"
+    static var description = IntentDescription("Arriva un ospite a sorpresa: un uccellino, un cane, un topolino, un gomitolo...")
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        SharedStore.send(.surprise)
+        return .result(dialog: "Guarda il desktop.")
+    }
+}
+
 struct SleepCatIntent: AppIntent {
     static var title: LocalizedStringResource = "Metti a dormire il gatto"
     static var description = IntentDescription("Il gatto si cerca un posto e si acciambella.")

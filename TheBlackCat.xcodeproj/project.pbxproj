@@ -20,6 +20,7 @@
 		3B02EC3696C598CF4A0F6078 /* CatCoat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0551F7DA9ABAF08C238C9474 /* CatCoat.swift */; };
 		3E1F62860F1BB136D7C93133 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE94564E30BE79843399CD6E /* SharedStore.swift */; };
 		3E75D5FFC8F5ACD3E815D452 /* CatPose.swift in Sources */ = {isa = PBXBuildFile; fileRef = 454DEC77EA579ADECC83A184 /* CatPose.swift */; };
+		4C37532A82962BE702536787 /* SceneDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8661C1474483A6E345DF260C /* SceneDirector.swift */; };
 		55D6195000210A0687C98ACA /* CatWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 705C281185EE5EBC49376828 /* CatWidget.swift */; };
 		5711E8DA976E0D43BCEB1E45 /* WorldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04813511281B0340B11B271 /* WorldTests.swift */; };
 		59C08FA0E842F40127037ADB /* WindowNudger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08D2DFC4397B1BC04033B12E /* WindowNudger.swift */; };
@@ -40,6 +41,7 @@
 		9B4708178EB9A76833091768 /* CatVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = F384C76C4B6A3A5C5FBB2755 /* CatVoice.swift */; };
 		9FAEC4BC7E880D1AB8BE2F6A /* WeatherSense.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E689B5C7A1355409F3C4F9E /* WeatherSense.swift */; };
 		AF654C8F183A174AE93AFFA9 /* CatSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE5D9B4BE075CB84577CFE7 /* CatSettings.swift */; };
+		B1CC8C53BCB6DEB7C1C9D67B /* Visitors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C375D2914A0C294CCBB78C9 /* Visitors.swift */; };
 		B5A169109AF7FE6B0FD4CF1F /* TailChain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9171E07C89B61CABFCD05 /* TailChain.swift */; };
 		B5CE1792D376B866497C1AF7 /* WorldModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 582F30CCCC74B840616D709E /* WorldModel.swift */; };
 		B7BC910082C0781FAA4A967F /* CatController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEBB757F04D9D957C438ED03 /* CatController.swift */; };
@@ -90,6 +92,7 @@
 		06E7D219691253BEF19C7E27 /* Animator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Animator.swift; sourceTree = "<group>"; };
 		078BC107B0120EF06A8BEC6A /* HearingSense.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HearingSense.swift; sourceTree = "<group>"; };
 		08D2DFC4397B1BC04033B12E /* WindowNudger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowNudger.swift; sourceTree = "<group>"; };
+		0C375D2914A0C294CCBB78C9 /* Visitors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Visitors.swift; sourceTree = "<group>"; };
 		0EB9171E07C89B61CABFCD05 /* TailChain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailChain.swift; sourceTree = "<group>"; };
 		25FF64F4E664B51BA8447D98 /* CatPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatPanel.swift; sourceTree = "<group>"; };
 		27B6020AD6CD66D61DB69D64 /* CatRig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatRig.swift; sourceTree = "<group>"; };
@@ -108,6 +111,7 @@
 		6FB1F73E4EBB77F7A5EBD0CC /* Navigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Navigator.swift; sourceTree = "<group>"; };
 		705C281185EE5EBC49376828 /* CatWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatWidget.swift; sourceTree = "<group>"; };
 		7E689B5C7A1355409F3C4F9E /* WeatherSense.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSense.swift; sourceTree = "<group>"; };
+		8661C1474483A6E345DF260C /* SceneDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDirector.swift; sourceTree = "<group>"; };
 		8DE5D9B4BE075CB84577CFE7 /* CatSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatSettings.swift; sourceTree = "<group>"; };
 		8E3721F0326622A11565F821 /* BubblePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubblePanel.swift; sourceTree = "<group>"; };
 		949D81477D4C2C1421927028 /* ScreenSense.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSense.swift; sourceTree = "<group>"; };
@@ -183,6 +187,15 @@
 			path = Widget;
 			sourceTree = "<group>";
 		};
+		80A3B3254095F25D064B1179 /* Scenes */ = {
+			isa = PBXGroup;
+			children = (
+				8661C1474483A6E345DF260C /* SceneDirector.swift */,
+				0C375D2914A0C294CCBB78C9 /* Visitors.swift */,
+			);
+			path = Scenes;
+			sourceTree = "<group>";
+		};
 		8D4EFBA34CE5DFA50BBF4647 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -190,6 +203,7 @@
 				6E68BF810B6876AD23958656 /* Body */,
 				DA7A201B3BD36B5010D137E1 /* Brain */,
 				5122C91C70EC18343F01D528 /* Intents */,
+				80A3B3254095F25D064B1179 /* Scenes */,
 				9A0EE256592459B718F3D2D3 /* Senses */,
 				1602C0C42055DB758692DBAE /* UI */,
 				B1755E0985D87BD9E6B7F29B /* Voice */,
@@ -439,6 +453,7 @@
 				DF0A8511806D67C22B2FCC9D /* Navigator.swift in Sources */,
 				8A1464F4E2B57CBB43142797 /* Needs.swift in Sources */,
 				0CFF9AE612870FCAF45787E7 /* Notifier.swift in Sources */,
+				4C37532A82962BE702536787 /* SceneDirector.swift in Sources */,
 				DCE19018D18237107C2B74FE /* ScreenSense.swift in Sources */,
 				01C1F5013CB7F74BB195A338 /* SettingsView.swift in Sources */,
 				3E1F62860F1BB136D7C93133 /* SharedStore.swift in Sources */,
@@ -447,6 +462,7 @@
 				B5A169109AF7FE6B0FD4CF1F /* TailChain.swift in Sources */,
 				F16BA288A9C0A72B00BAD003 /* ThoughtEngine.swift in Sources */,
 				CA3129DE9EB777148E29886B /* ThoughtText.swift in Sources */,
+				B1CC8C53BCB6DEB7C1C9D67B /* Visitors.swift in Sources */,
 				9FAEC4BC7E880D1AB8BE2F6A /* WeatherSense.swift in Sources */,
 				59C08FA0E842F40127037ADB /* WindowNudger.swift in Sources */,
 				950524D980E590D7AC5A1B04 /* WindowScanner.swift in Sources */,
@@ -498,7 +514,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -577,7 +593,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -601,7 +617,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/TheBlackCat.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -690,7 +706,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/TheBlackCat.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -715,7 +731,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/TheBlackCatWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -741,7 +757,7 @@
 				CODE_SIGN_ENTITLEMENTS = Config/TheBlackCatWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = ERAK83QBBM;
 				ENABLE_HARDENED_RUNTIME = YES;

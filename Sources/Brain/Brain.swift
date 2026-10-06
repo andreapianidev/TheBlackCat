@@ -1,6 +1,6 @@
 import AppKit
 
-enum CatSound { case meow, meowLong, demand, trill, hiss, crunch, chatter }
+enum CatSound { case meow, meowLong, demand, trill, hiss, crunch, chatter, bark, chirp, squeak }
 enum ParticleKind { case zzz, heart, bang, note, question, ring, sweat, anger, dust, speed, sparkle }
 enum WeatherMood: Equatable { case rain, sun, cold, heat, mild }
 
@@ -62,6 +62,9 @@ private enum TaskKind {
     case watchFly
     case pounceFly
     case flyOutcome
+    case watchTarget(() -> CGPoint?)
+    case pounceAt(() -> CGPoint?)
+    case call(() -> Void)
 }
 
 private struct Task {
@@ -128,6 +131,9 @@ final class Brain {
     private var followUps: [Task] = []
     /// The fly the cat is hunting, if any.
     private(set) var fly: Fly?
+    /// Something to play with other than the pointer (a laser dot, a ball of yarn).
+    var toy: (() -> CGPoint?)?
+    private var playTarget: CGPoint? { toy?() ?? out?.cursor }
 
     init(body: CatBody, anim: Animator) {
         self.body = body
@@ -379,7 +385,7 @@ final class Brain {
             return body.isGrounded
 
         case .stalk:
-            guard let c = out?.cursor else { return true }
+            guard let c = playTarget else { return true }
             if !t.launched {
                 anim.kind = .crouch
                 anim.tailStyle = .stalking
@@ -477,6 +483,32 @@ final class Brain {
                 return false
             }
             return body.isGrounded
+
+        case .watchTarget(let target):
+            guard let p = target() else { return true }
+            let late = t.elapsed > t.duration * 0.5
+            anim.kind = late ? .crouch : .sit
+            anim.tailStyle = .stalking
+            anim.lookAt = p
+            anim.flourish = late ? [.wiggle, .chatter] : [.chatter]
+            body.turn(toward: p.x)
+            return t.elapsed >= t.duration
+
+        case .pounceAt(let target):
+            if !t.launched {
+                guard let p = target() else { return true }
+                let s = body.scale
+                let dx = (p.x - body.pos.x).clamped(-body.maxJumpAcross * 0.7, body.maxJumpAcross * 0.7)
+                let dy = (p.y - body.pos.y).clamped(4 * s, body.maxJumpUp * 0.7)
+                body.launch(to: CGPoint(x: body.pos.x + dx, y: body.pos.y + dy), lift: 16 * s)
+                t.launched = true
+                return false
+            }
+            return body.isGrounded
+
+        case .call(let action):
+            action()
+            return true
 
         case .flyOutcome:
             guard let f = fly else { return true }
@@ -661,7 +693,7 @@ final class Brain {
     }
 
     private func isCursorHuntable(_ world: World) -> Bool {
-        guard let c = out?.cursor, let ledge = body.currentLedge(world) else { return false }
+        guard let c = playTarget, let ledge = body.currentLedge(world) else { return false }
         let s = body.scale
         return abs(c.x - body.pos.x) < 420 * s && abs(c.x - body.pos.x) > 30 * s
             && c.y > ledge.y - 10 && c.y < ledge.y + 240 * s
@@ -790,7 +822,7 @@ final class Brain {
 
     /// Someone is waving the pointer: hunt it, chase it along the ledge, bat at it.
     private func planPlay(_ world: World) {
-        guard let c = out?.cursor else { return }
+        guard let c = playTarget else { return }
         let s = body.scale
         let d = c.distance(to: body.pos)
         if d < 60 * s {
@@ -798,7 +830,7 @@ final class Brain {
         } else if isCursorHuntable(world) {
             queue = [Task(kind: .stalk, duration: .random(in: 0.35...0.8))]
         } else {
-            goal = Goal(target: { [weak self] in self?.out?.cursor }, gait: .run, radius: 160 * s,
+            goal = Goal(target: { [weak self] in self?.playTarget }, gait: .run, radius: 160 * s,
                         onArrive: { [Task(kind: .stalk, duration: .random(in: 0.3...0.6))] }, deadline: time + 6)
         }
     }
@@ -862,6 +894,114 @@ final class Brain {
     func wakeUp() {
         if isAsleep { queue = wakeUpFirst() }
     }
+
+    // MARK: Scenes (visitors directed by SceneDirector)
+
+    private var sceneBusy: Bool { if case .dragged = body.loco { return true }; return false }
+
+    /// Approach slowly, watch, wiggle, pounce.
+    func sceneHunt(_ target: @escaping () -> CGPoint?, then: (() -> Void)? = nil) {
+        guard !sceneBusy else { return }
+        let s = body.scale
+        queue = wakeUpFirst()
+        goal = Goal(target: target, gait: .walk, radius: 120 * s, onArrive: {
+            var t = [Task(kind: .watchTarget(target), duration: .random(in: 1.4...2.4)), Task(kind: .sound(.chatter)),
+                     Task(kind: .pounceAt(target))]
+            if let then { t.append(Task(kind: .call(then))) }
+            return t
+        }, deadline: time + 25)
+    }
+
+    /// Run after something and pounce on it.
+    func sceneChase(_ target: @escaping () -> CGPoint?, gait: Gait = .sprint, then: (() -> Void)? = nil) {
+        guard !sceneBusy else { return }
+        queue = wakeUpFirst()
+        goal = Goal(target: target, gait: gait, radius: 50 * body.scale, onArrive: {
+            var t = [Task(kind: .pounceAt(target))]
+            if let then { t.append(Task(kind: .call(then))) }
+            return t
+        }, deadline: time + 15)
+    }
+
+    /// Bolt away from danger at full speed, and up to the highest place in reach.
+    func sceneFlee(from x: CGFloat) {
+        guard !sceneBusy else { return }
+        goal = nil
+        anim.startle()
+        out?.emit(.bang)
+        out?.emit(.sweat)
+        guard body.isGrounded, let l = body.currentLedge(world) else { return }
+        queue = [Task(kind: .sound(.hiss))]
+        let jumps = Navigator.moves(for: body, in: world).filter { $0.arrival.y > body.pos.y + 40 * body.scale }
+        if let up = jumps.filter({ $0.grab == nil }).max(by: { $0.arrival.y < $1.arrival.y }) ?? jumps.max(by: { $0.arrival.y < $1.arrival.y }) {
+            queue.append(Task(kind: .walk(x: up.takeoffX, gait: .sprint)))
+            queue.append(Task(kind: .jump(up)))
+        } else {
+            queue.append(Task(kind: .walk(x: body.pos.x >= x ? l.span.hi : l.span.lo, gait: .sprint)))
+        }
+        queue += [Task(kind: .face(x)), Task(kind: .particle(.anger)), Task.hold(.hiss, 1.5...2.5, .angry),
+                  Task(kind: .text(["Non è finita qui.", "Cane. Odio.", "Io non scappo. Mi riposiziono."].randomElement()!)),
+                  Task.hold(.sit, 3...5, .annoyed)]
+    }
+
+    /// Get into something (a box) and stay there.
+    func sceneSitIn(at spot: CGPoint, for duration: ClosedRange<CGFloat>) {
+        guard !sceneBusy else { return }
+        queue = wakeUpFirst()
+        goal = Goal(target: { spot }, gait: .trot, radius: 10 * body.scale, onArrive: {
+            [Task(kind: .hop(260)), Task(kind: .text(["Se ci sto, ci sto.", "Scatola. Mia.", "Casa nuova."].randomElement()!)),
+             Task.hold(.loaf, duration, .wrapped)]
+        }, deadline: time + 25)
+    }
+
+    /// Jump onto a moving platform (the robot vacuum).
+    func sceneBoard(top: CGPoint, platform id: UInt32) {
+        guard !sceneBusy, body.isGrounded else { return }
+        goal = nil
+        let m = Move(takeoffX: body.pos.x, target: top, grab: nil, arrival: top, targetWindow: id)
+        queue = [Task(kind: .face(top.x)), Task(kind: .jump(m)), Task(kind: .text(["Taxi.", "Si parte.", "Avanti, autista."].randomElement()!)),
+                 Task.hold(.loaf, 25...40, .happy)]
+    }
+
+    /// Face a rival and hiss it away.
+    func sceneStandoff(facing x: CGFloat) {
+        guard !sceneBusy else { return }
+        goal = nil
+        anim.startle()
+        queue = [Task(kind: .face(x)), Task(kind: .particle(.anger)), Task(kind: .sound(.hiss)), Task.hold(.hiss, 2.5...3.5, .angry),
+                 Task(kind: .text(["Questo è il mio desktop.", "Fuori dalla mia finestra.", "Qui comando io."].randomElement()!)),
+                 Task.hold(.sit, 2...3, .annoyed)]
+    }
+
+    /// Watch something closely for a while.
+    func sceneWatch(_ target: @escaping () -> CGPoint?, for seconds: CGFloat) {
+        guard !sceneBusy else { return }
+        goal = nil
+        queue = wakeUpFirst() + [Task(kind: .watchTarget(target), duration: seconds)]
+    }
+
+    /// Something on the nose.
+    func sceneSneeze() {
+        queue = [Task.hold(.sit, 0.4...0.5, .alert, .yawn), Task(kind: .sound(.meow)), Task(kind: .hop(200)),
+                 Task(kind: .text("Etciù.")), Task.hold(.sit, 1.5...2.5, .annoyed, .lick)]
+    }
+
+    /// Play with a toy that is not the pointer, for a while.
+    func scenePlay(with target: @escaping () -> CGPoint?, for seconds: CGFloat) {
+        guard !sceneBusy else { return }
+        toy = target
+        goal = nil
+        queue = wakeUpFirst()
+        playUntil = time + seconds
+    }
+
+    func sceneEnded() {
+        toy = nil
+        playUntil = 0
+        if goal != nil { goal = nil; queue = [] }
+    }
+
+    func sceneSay(_ text: String) { out?.sayText(text) }
 
     // MARK: Reactions
 

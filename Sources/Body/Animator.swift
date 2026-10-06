@@ -230,7 +230,7 @@ final class Animator {
         switch gait {
         case .walk: stride = 34; stance = 0.62; lift = 4; offsets = [0.25, 0.75, 0, 0.5]
         case .trot: stride = 48; stance = 0.5; lift = 6; offsets = [0.5, 0, 0, 0.5]
-        case .run: stride = 74; stance = 0.38; lift = 8; offsets = [0.55, 0.65, 0, 0.1]
+        case .run, .sprint: stride = 74; stance = 0.38; lift = 8; offsets = [0.55, 0.65, 0, 0.1]
         case .climb: stride = 26; stance = 0.55; lift = 5; offsets = [0.5, 0, 0, 0.5]
         }
         phase += speed * dt / stride
@@ -253,7 +253,7 @@ final class Animator {
         }
         let bob = sin(phase * 4 * .pi)
         switch gait {
-        case .run:
+        case .run, .sprint:
             let flex = sin(phase * 2 * .pi) * 5 * w
             p.chest.x += flex; p.hip.x -= flex
             p.chest.y += bob * 2 * w; p.hip.y -= bob * 2 * w

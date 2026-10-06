@@ -123,6 +123,9 @@ private struct Synth {
         case .hiss: v = Voice(sound: s, duration: 0.95, base: 0)
         case .crunch: v = Voice(sound: s, duration: 0.12, base: 0)
         case .chatter: v = Voice(sound: s, duration: 0.6, base: 900)
+        case .bark: v = Voice(sound: s, duration: 0.24, base: .random(in: 480...560))
+        case .chirp: v = Voice(sound: s, duration: 0.36, base: 4300)
+        case .squeak: v = Voice(sound: s, duration: 0.13, base: 2900)
         }
         if voices.count < 6 { voices.append(v) }
     }
@@ -166,6 +169,32 @@ private struct Synth {
                 let x = Float(src * 0.5) + noise() * 0.04
                 s = (v.f1.process(x) * 1.6 + v.f2.process(x) * 1.0) * Float(env)
                 if v.sound == .demand { s *= 1.25 }
+            case .bark:
+                // A short harsh "wuf": falling pitch, rich harmonics, a breath of noise.
+                let f0 = v.base * (1 - 0.45 * u)
+                v.phase += f0 * dt
+                if v.phase > 1 { v.phase -= 1 }
+                var src: Double = 0
+                for k in 1...14 { src += sin(2 * .pi * Double(k) * v.phase) / Double(k) }
+                if v.counter % 32 == 0 {
+                    v.f1.bandpass(750, q: 3, rate: rate)
+                    v.f2.bandpass(1350, q: 4, rate: rate)
+                }
+                v.counter += 1
+                let env = min(1, v.t / 0.01) * exp(-7 * v.t)
+                let x = Float(src * 0.5) + noise() * 0.25
+                s = (v.f1.process(x) * 1.8 + v.f2.process(x)) * Float(env) * 1.3
+            case .chirp, .squeak:
+                // Bird pips and mouse squeaks: quick upward sine sweeps.
+                let pips = v.sound == .chirp ? 3.0 : 1.0
+                let seg = v.duration / pips
+                let local = v.t.truncatingRemainder(dividingBy: seg)
+                let on = local < seg * 0.7
+                let f = v.base * (1 + 0.25 * local / seg)
+                v.phase += f * dt
+                if v.phase > 1 { v.phase -= 1 }
+                let env = on ? sin(.pi * min(1, local / (seg * 0.7))) : 0
+                s = Float(sin(2 * .pi * v.phase) * env * 0.35)
             case .hiss:
                 if v.counter == 0 { v.f1.bandpass(5200, q: 0.7, rate: rate) }
                 v.counter += 1

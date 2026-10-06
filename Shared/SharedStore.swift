@@ -8,7 +8,7 @@ enum SharedStore {
     static var defaults: UserDefaults { UserDefaults(suiteName: group) ?? .standard }
 
     enum Command: String, Codable {
-        case feed, call, sleep, wake, find
+        case feed, call, sleep, wake, find, surprise
     }
 
     /// A small picture of the cat for the widget.

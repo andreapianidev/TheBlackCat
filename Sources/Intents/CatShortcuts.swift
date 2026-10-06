@@ -8,6 +8,9 @@ struct CatShortcuts: AppShortcutsProvider {
         AppShortcut(intent: CallCatIntent(),
                     phrases: ["Chiama \(.applicationName)", "Vieni qui \(.applicationName)"],
                     shortTitle: "Chiamalo", systemImageName: "pawprint")
+        AppShortcut(intent: SurpriseCatIntent(),
+                    phrases: ["Sorpresa per \(.applicationName)", "Fai succedere qualcosa a \(.applicationName)"],
+                    shortTitle: "Sorpresa", systemImageName: "sparkles")
         AppShortcut(intent: SleepCatIntent(),
                     phrases: ["Metti a nanna \(.applicationName)"],
                     shortTitle: "Nanna", systemImageName: "moon.zzz")

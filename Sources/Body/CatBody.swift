@@ -1,7 +1,7 @@
 import AppKit
 
 enum Gait {
-    case walk, trot, run, climb
+    case walk, trot, run, climb, sprint
 
     /// Points per second at scale 1.
     var speed: CGFloat {
@@ -10,6 +10,7 @@ enum Gait {
         case .trot: return 105
         case .run: return 240
         case .climb: return 62
+        case .sprint: return 400
         }
     }
 }
@@ -231,6 +232,14 @@ final class CatBody {
             loco = .grounded(.window(id: id, offsetX: pos.x - w.frame.minX))
         }
         return abs(target - pos.x) < 1
+    }
+
+    /// Moves freely along x, ignoring ledges: for a visiting cat that walks in from off screen.
+    func stroll(by dx: CGFloat, speed: CGFloat) {
+        pos.x += dx
+        if dx != 0 { facing = dx > 0 ? 1 : -1 }
+        groundSpeed = speed
+        gait = .walk
     }
 
     func turn(toward x: CGFloat) {

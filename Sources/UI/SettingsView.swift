@@ -37,6 +37,7 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Stile fumetto", isOn: $settings.comic)
+                Toggle("Scenette a sorpresa (uccellini, cani, topolini...)", isOn: $settings.scenes)
                 Toggle("Miagolii e fusa", isOn: $settings.sound)
                 if settings.sound {
                     Slider(value: $settings.volume, in: 0.1...1) { Text("Volume") }

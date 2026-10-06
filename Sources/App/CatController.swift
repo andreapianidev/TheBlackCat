@@ -55,6 +55,10 @@ final class CatController: NSObject {
     private var panelSize: CGSize { CGSize(width: 210 * body.scale, height: 250 * body.scale) }
     private var anchorInPanel: CGPoint { CGPoint(x: panelSize.width / 2, y: panelSize.height * 0.42) }
     private var nextSpeedLine: CGFloat = 0
+    private lazy var director = SceneDirector(stage: Stage(
+        brain: brain, body: body,
+        play: { [weak self] s in self?.play(s) },
+        say: { [weak self] t in self?.sayText(t) }))
     private var cursorTrail: [(CGPoint, CFTimeInterval)] = []
     private var lastPlayPing: CFTimeInterval = 0
     private enum Pace { case asleep, idle, active, fast }
@@ -144,12 +148,13 @@ final class CatController: NSObject {
     }
 
     private func rebuildWorld() {
-        world = WorldBuilder.build(windows: windows, screens: screens, clearance: 8, minPiece: 46 * body.scale)
+        world = WorldBuilder.build(windows: director.platforms + windows, screens: screens, clearance: 8, minPiece: 46 * body.scale)
     }
 
     /// Between full scans, only the window under the cat is followed, so it rides a dragged window smoothly.
     private func trackWindowUnderCat() {
-        guard let id = body.windowUnderneath, let i = windows.firstIndex(where: { $0.id == id }) else { return }
+        guard let id = body.windowUnderneath, id != SceneDirector.platformID,
+              let i = windows.firstIndex(where: { $0.id == id }) else { return }
         if let f = WindowScanner.frame(of: id) {
             if f != windows[i].frame { windows[i].frame = f; rebuildWorld() }
         } else {
@@ -214,6 +219,8 @@ final class CatController: NSObject {
         let petting = hoverTime > 0.5 && body.isGrounded
         brain.petting(petting, dt: dt)
         brain.update(dt, world: world)
+        director.tick(dt, world: world, paused: settings.paused)
+        if !director.platforms.isEmpty { rebuildWorld() }
         voice.purr(brain.isPetted)
         if brain.isPetted {
             nextHaptic -= dt
@@ -249,7 +256,7 @@ final class CatController: NSObject {
 
         // 60 frames only for fast motion; walking reads fine at 30, resting at 20, sleep at 12.
         let fast = dragging || !body.isGrounded || body.groundSpeed > 150 * body.scale
-        let moving = body.groundSpeed > 1 || !particles.isCalm || brain.isPetted || brain.fly != nil
+        let moving = body.groundSpeed > 1 || !particles.isCalm || brain.isPetted || brain.fly != nil || director.isActive
         let next: Pace = fast ? .fast : (brain.isAsleep && !brain.isPetted ? .asleep : (moving ? .active : .idle))
         if next != pace { setPace(next) }
     }
@@ -382,6 +389,7 @@ final class CatController: NSObject {
         }.store(in: &cancellables)
         settings.$brain.sink { [weak self] b in self?.thoughts.cloud = b == "agnes" }.store(in: &cancellables)
         settings.$agnesVision.sink { [weak self] on in self?.screenEyes.agnesVision = on }.store(in: &cancellables)
+        settings.$scenes.sink { [weak self] on in self?.director.enabled = on }.store(in: &cancellables)
         settings.$aiThoughts.sink { [weak self] on in self?.thoughts.useModel = on }.store(in: &cancellables)
         settings.$sight.sink { [weak self] on in on ? self?.sight.start() : self?.sight.stop() }.store(in: &cancellables)
         settings.$hearing.sink { [weak self] on in on ? self?.hearing.start() : self?.hearing.stop() }.store(in: &cancellables)
@@ -450,6 +458,7 @@ final class CatController: NSObject {
             case .sleep: brain.react(.sleepCommand)
             case .wake: brain.wakeUp()
             case .find: find()
+            case .surprise: startScene(nil)
             }
         }
     }
@@ -493,6 +502,7 @@ extension CatController: BrainOutput {
     func play(_ sound: CatSound) {
         voice.play(sound)
         if sound != .crunch { hearing.mute(for: 2) }
+        if sound == .bark || sound == .chirp || sound == .squeak { return }
         if sound == .meow || sound == .meowLong || sound == .demand || sound == .trill { particles.emit(.note, at: notePoint, scale: body.scale) }
     }
 
@@ -598,6 +608,12 @@ extension CatController: MenuBarActions {
     var coatID: String { settings.coat }
     var comicOn: Bool { settings.comic }
     func setCoat(_ id: String) { settings.coat = id }
+    var scenesOn: Bool { settings.scenes }
+    func toggleScenes() { settings.scenes.toggle() }
+    func startScene(_ kind: SceneKind?) {
+        if settings.paused { settings.paused = false }
+        director.start(kind, world: world)
+    }
     func toggleComic() { settings.comic.toggle() }
 
     func feed() {

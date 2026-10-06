@@ -11,6 +11,9 @@ protocol MenuBarActions: AnyObject {
     var coatID: String { get }
     var comicOn: Bool { get }
     func setCoat(_ id: String)
+    var scenesOn: Bool { get }
+    func toggleScenes()
+    func startScene(_ kind: SceneKind?)
     func toggleComic()
     func feed()
     func call()
@@ -87,6 +90,26 @@ final class MenuBar: NSObject, NSMenuDelegate {
         coats.addItem(comic)
         coatItem.submenu = coats
         menu.addItem(coatItem)
+
+        let sceneItem = NSMenuItem(title: "Scenette", action: nil, keyEquivalent: "")
+        let scenes = NSMenu()
+        let surprise = NSMenuItem(title: "Una a sorpresa", action: #selector(pickScene(_:)), keyEquivalent: "")
+        surprise.target = self
+        scenes.addItem(surprise)
+        scenes.addItem(.separator())
+        for k in SceneKind.allCases {
+            let i = NSMenuItem(title: k.title, action: #selector(pickScene(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = k.rawValue
+            scenes.addItem(i)
+        }
+        scenes.addItem(.separator())
+        let auto = NSMenuItem(title: "Ogni tanto, da sole", action: #selector(toggleScenes), keyEquivalent: "")
+        auto.target = self
+        auto.state = a.scenesOn ? .on : .off
+        scenes.addItem(auto)
+        sceneItem.submenu = scenes
+        menu.addItem(sceneItem)
         let sound = add("Miagolii e fusa", #selector(toggleSound), "")
         sound.state = a.soundOn ? .on : .off
         add(a.isOutside ? "Fallo rientrare" : "Mandalo in giardino", #selector(toggleOutside), "", symbol: a.isOutside ? "house" : "leaf")
@@ -116,6 +139,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
     @objc private func settings() { actions?.openSettings() }
     @objc private func about() { actions?.openAbout() }
     @objc private func toggleComic() { actions?.toggleComic() }
+    @objc private func toggleScenes() { actions?.toggleScenes() }
+    @objc private func pickScene(_ sender: NSMenuItem) {
+        actions?.startScene((sender.representedObject as? String).flatMap(SceneKind.init(rawValue:)))
+    }
     @objc private func pickCoat(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { actions?.setCoat(id) }
     }
