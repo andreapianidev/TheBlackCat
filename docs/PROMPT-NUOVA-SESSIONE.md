@@ -20,7 +20,10 @@ la grafica di base non va stravolta.
   dall'app nel portachiavi (service `app.andreapiani.theblackcat`, account
   `agnes`) solo quando in Impostazioni si preme "Importa la chiave dal vault".
   Mai nel repository, mai stampata nel terminale.
-- Stato attuale: versione 1.0, **build 7**. Il numero è visibile nel menu del gatto
+- Chiave DeepSeek: nel vault `~/.secrets/deepseek-harness.env` (`DEEPSEEK_API_KEY`,
+  modello `deepseek-v4-flash`), copiata nel portachiavi (stesso service, account
+  `deepseek`) quando in Impostazioni si sceglie DeepSeek o si preme "Importa".
+- Stato attuale: versione 1.0, **build 9**. Il numero è visibile nel menu del gatto
   nella barra dei menu.
 
 ## Struttura del codice
@@ -32,8 +35,9 @@ la grafica di base non va stravolta.
   `CatPose.swift` (posture, 20 tipi, e stili della coda), `CatRig.swift`
   (disegno: zampe a cinematica inversa, mantelli, segni, stile fumetto,
   contorno senza sfocatura), `TailChain.swift` (coda a molle),
-  `CatCoat.swift` (8 mantelli: nero, smoking, rosso tigrato, certosino,
-  bianco, siamese, tricolore, soriano).
+  `CatCoat.swift` (9 mantelli: nero, smoking, Silvestro, rosso tigrato,
+  certosino, bianco, siamese, tricolore, soriano), `CatMotion.swift` (gesti:
+  lavaggio del muso, rotolata, starnuto, sogni).
 - `Shared/SharedStore.swift`, `Shared/CatIntents.swift`: comandi tra widget,
   Comandi rapidi e app (notifica Darwin), istantanea per il widget.
 - `Sources/World/`: `WindowScanner` (finestre con CGWindowList, solo
@@ -45,13 +49,19 @@ la grafica di base non va stravolta.
 - `Sources/Brain/`: `Brain` (bisogni, scelte pesate, compiti, reazioni,
   API per le scenette), `Navigator` (salti e arrampicate possibili),
   `Needs`, `ThoughtText` (frasi scritte a mano), `ThoughtEngine` (pensieri
-  con Apple Intelligence o Agnes), `AgnesClient` (gateway OpenAI-compatibile,
-  `agnes-2.5-flash` con `enable_thinking: false`), `Fly` (la mosca).
+  con Apple Intelligence, DeepSeek o Agnes), `Mind` (il carattere: ogni 1-2
+  minuti decide cosa fare, `CatIntent`, con un diario; Apple Intelligence con
+  generazione guidata `@Generable`, nel cloud JSON), `AgnesClient` (anche
+  `VaultKey`, le chiavi nel portachiavi), `DeepSeekClient` (`deepseek-v4-flash`,
+  `thinking` disattivato, e `CloudBrain`), `Fly` (la mosca).
 - `Sources/Scenes/`: `Visitors.swift` (uccellino, cane, topolino, gomitolo,
-  farfalla, scatola, robot aspirapolvere, gatto rivale, puntino laser),
-  `SceneDirector.swift` (copioni delle scenette, una ogni 10-25 minuti).
-- `Sources/Senses/`: vista (fotocamera + Vision), udito (SoundAnalysis +
-  riconoscimento vocale in italiano, acceso solo quando qualcuno parla),
+  farfalla, scatola, robot aspirapolvere, gatto rivale, puntino laser, ragnetto,
+  foglia, lucciole), `SceneDirector.swift` (copioni delle scenette: la prima
+  45-90 secondi dopo l'avvio, poi una ogni 3-6 minuti, da un mazzo mescolato).
+- `Sources/Senses/`: `Attention` (apre fotocamera e microfono solo per pochi
+  secondi: ritorno al Mac, clic sul gatto, curiosità; assenza da tastiera e
+  mouse, non durante un video), vista (fotocamera + Vision), udito
+  (SoundAnalysis + riconoscimento vocale in italiano),
   occhi sullo schermo (ScreenCaptureKit + Vision, e Agnes se attivato),
   sistema (app in primo piano, calore, batteria), meteo (Open-Meteo),
   calendario, notifiche, `WindowNudger` (dispetti con Accessibilità:
@@ -93,7 +103,11 @@ Foglio di prova delle posture:
   commit e push (repo privato, niente segreti nel diff).
 - Testi visibili in italiano, mai la lineetta lunga né quella media.
 - Riga legale: `© 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias`. Mai "Immaginet".
-- Niente DeepSeek: solo Agnes per il cloud, Apple Intelligence sul Mac.
+- Cloud: DeepSeek (`deepseek-v4-flash`, chiave di `deepseek-harness.env`, la stessa
+  della Bottega) o Agnes; Apple Intelligence sul Mac. Andrea ha chiesto DeepSeek
+  il 06/10/2026. Chiavi solo nel portachiavi, mai nel repository.
+- "Silvestro" è un personaggio Warner Bros: va bene per uso personale, ma se il
+  repository diventa pubblico o l'app si distribuisce va rinominato.
 - Mac: MacBook Air M2 16 GB, schermo 1710 x 1107 punti, Stage Manager attivo.
   Niente simulatori. Al massimo due build in parallelo.
 - Prima di dire "funziona" misura: CPU con `ps -o %cpu= -p $(pgrep -f "The Black Cat.app/Contents/MacOS")`,
@@ -114,6 +128,10 @@ Foglio di prova delle posture:
   arrampicabili partono da 90.
 
 ## Non ancora verificato dal vivo
+
+- Il carattere con DeepSeek: decisioni coerenti, pensieri nel fumetto.
+- Le scenette nuove (ragnetto, foglia, lucciole) e i gesti spontanei nuovi.
+- Fotocamera e microfono che si accendono solo per pochi secondi.
 
 - Le scenette in movimento (robot su cui salire, gatto dentro la scatola,
   fuga dal cane).

@@ -1,7 +1,7 @@
 import AppKit
 
 enum SceneKind: String, CaseIterable {
-    case bird, dog, mouse, yarn, butterfly, box, robot, rival, laser
+    case bird, dog, mouse, yarn, butterfly, box, robot, rival, laser, spider, leaf, firefly
 
     var title: String {
         switch self {
@@ -14,6 +14,9 @@ enum SceneKind: String, CaseIterable {
         case .robot: return "Robot aspirapolvere"
         case .rival: return "Gatto rivale"
         case .laser: return "Puntino laser"
+        case .spider: return "Ragnetto"
+        case .leaf: return "Foglia al vento"
+        case .firefly: return "Lucciole"
         }
     }
 }
@@ -83,6 +86,9 @@ final class SceneDirector {
         case .robot: scene = RobotScene(stage, floor: floor)
         case .rival: scene = RivalScene(stage, floor: floor)
         case .laser: scene = LaserScene(stage, floor: floor)
+        case .spider: scene = SpiderScene(stage)
+        case .leaf: scene = LeafScene(stage, world: world, floor: floor)
+        case .firefly: scene = FireflyScene(stage)
         }
     }
 
@@ -603,6 +609,197 @@ private final class LaserScene: SceneScript {
             stage.brain.sceneEnded()
             stage.say(["Dov'è andato?", "Era qui. Giuro.", "Lo troverò."].randomElement()!)
             return true
+        }
+        return false
+    }
+}
+
+// MARK: - Spider: comes down on its thread, gets batted twice, climbs back up
+
+private final class SpiderScene: SceneScript {
+    let stage: Stage
+    let spider: Spider
+    var visitors: [Visitor] { [spider] }
+    private enum Phase { case descend, swat1, swat2, escape }
+    private var phase = Phase.descend
+    private var timer: CGFloat = 0
+    private var hits = 0
+
+    init(_ stage: Stage) {
+        self.stage = stage
+        let s = stage.s, b = stage.body
+        let anchor = CGPoint(x: b.pos.x + b.facing * 34 * s, y: b.pos.y + 300 * s)
+        spider = Spider(anchor: anchor, maxDrop: 205 * s, fadeTop: true, scale: s)
+        stage.brain.sceneTrack({ [weak spider] in spider?.pos }, pose: .sit, tail: .alert, for: 12)
+    }
+
+    private func swat() {
+        stage.brain.sceneSwat({ [weak spider] in spider?.pos }) { [weak self] in
+            guard let self else { return }
+            self.hits += 1
+            self.spider.hit(dir: self.stage.body.facing)
+            self.stage.play(.chirp)
+        }
+    }
+
+    func update(_ dt: CGFloat, world: World) -> Bool {
+        timer += dt
+        spider.update(dt)
+        switch phase {
+        case .descend:
+            if spider.hanging && timer > 2.5 { phase = .swat1; timer = 0; swat() }
+        case .swat1:
+            if hits >= 1 && timer > 2.2 { phase = .swat2; timer = 0; swat() }
+            if timer > 6 { phase = .escape; timer = 0 }
+        case .swat2:
+            if hits >= 2 || timer > 5 {
+                phase = .escape
+                timer = 0
+                spider.goalDrop = 0
+                spider.climbSpeed = 110 * stage.s
+                stage.say(["Torna qui, codardo.", "Otto zampe e nessun coraggio.", "La prossima volta ti prendo."].randomElement()!)
+            }
+        case .escape:
+            spider.goalDrop = 0
+            spider.alpha = max(0, spider.alpha - dt * (spider.drop < 40 * stage.s ? 2 : 0))
+            return spider.drop < 2 || timer > 6
+        }
+        return false
+    }
+}
+
+// MARK: - Leaf: falls, gets pounced, skitters off in the wind, gets caught
+
+private final class LeafScene: SceneScript {
+    let stage: Stage
+    let leaf: Leaf
+    var visitors: [Visitor] { [leaf] }
+    private enum Phase { case falling, pounce, skitter, chase, proud, away }
+    private var phase = Phase.falling
+    private var timer: CGFloat = 0
+    private var dir: CGFloat = 1
+
+    init(_ stage: Stage, world: World, floor: Ledge) {
+        self.stage = stage
+        let s = stage.s, b = stage.body
+        let ledge = b.currentLedge(world) ?? floor
+        var x = b.pos.x + b.facing * .random(in: 110...170) * s
+        if !ledge.span.contains(x, margin: -20 * s) { x = b.pos.x - b.facing * .random(in: 110...170) * s }
+        x = ledge.span.clamp(x, inset: 20 * s)
+        leaf = Leaf(at: CGPoint(x: x, y: ledge.y + 320 * s), floorY: ledge.y, scale: s)
+        dir = x > b.pos.x ? 1 : -1
+        stage.brain.sceneTrack({ [weak leaf] in leaf?.pos }, pose: .crouch, tail: .stalking, flourish: [.wiggle], for: 9)
+    }
+
+    func update(_ dt: CGFloat, world: World) -> Bool {
+        timer += dt
+        leaf.update(dt)
+        let s = stage.s
+        switch phase {
+        case .falling:
+            if leaf.onFloor && timer > 1 {
+                phase = .pounce
+                timer = 0
+                stage.brain.scenePounce({ [weak leaf] in leaf?.pos }) { [weak self] in
+                    guard let self else { return }
+                    self.leaf.toss(dx: self.dir * 60 * s)
+                }
+            }
+            if timer > 12 { phase = .away; timer = 0; leaf.blowAway(dir: dir) }
+        case .pounce:
+            if timer > 2.5 && leaf.onFloor {
+                phase = .skitter
+                timer = 0
+                leaf.gust(dir: dir)
+            }
+            if timer > 6 { phase = .away; timer = 0; leaf.blowAway(dir: dir) }
+        case .skitter:
+            if timer > 0.4 {
+                phase = .chase
+                timer = 0
+                stage.brain.sceneChase({ [weak leaf] in leaf?.pos }, gait: .run) { [weak self] in
+                    guard let self else { return }
+                    let b = self.stage.body
+                    self.leaf.pin(at: CGPoint(x: b.pos.x + b.facing * 16 * s, y: self.leaf.floorY))
+                    self.stage.brain.sceneProud(["Presa. Era pericolosa.", "Nessuna foglia mi sfugge.", "Autunno sconfitto."].randomElement()!, for: 3)
+                    self.phase = .proud
+                    self.timer = 0
+                }
+            }
+        case .chase:
+            if timer > 7 { phase = .away; timer = 0; leaf.blowAway(dir: dir) }
+        case .proud:
+            if timer > 3.5 { phase = .away; timer = 0; leaf.blowAway(dir: dir) }
+        case .away:
+            return offscreen(leaf, world) || timer > 6
+        }
+        return false
+    }
+}
+
+// MARK: - Fireflies: a few blinking lights around the head, swats and a leap
+
+private final class FireflyScene: SceneScript {
+    let stage: Stage
+    let flies: [Firefly]
+    var visitors: [Visitor] { flies }
+    private var timer: CGFloat = 0
+    private var step = 0
+
+    init(_ stage: Stage) {
+        self.stage = stage
+        let s = stage.s, b = stage.body
+        flies = (0..<Int.random(in: 3...4)).map { i in
+            let side: CGFloat = i % 2 == 0 ? 1 : -1
+            let from = CGPoint(x: b.pos.x + side * .random(in: 260...420) * s, y: b.pos.y + .random(in: 200...320) * s)
+            return Firefly(at: from, target: from, scale: s)
+        }
+        stage.brain.sceneTrack({ [weak self] in self?.nearest }, pose: .sit, tail: .alert, for: 7)
+    }
+
+    private var head: CGPoint {
+        let b = stage.body
+        return CGPoint(x: b.pos.x, y: b.pos.y + 90 * stage.s)
+    }
+
+    private var nearest: CGPoint? {
+        flies.min { $0.pos.distance(to: head) < $1.pos.distance(to: head) }?.pos
+    }
+
+    func update(_ dt: CGFloat, world: World) -> Bool {
+        timer += dt
+        let s = stage.s
+        for f in flies { f.update(dt) }
+        switch step {
+        case 0:
+            for (i, f) in flies.enumerated() {
+                let a = CGFloat(i) * 1.9
+                f.target = CGPoint(x: head.x + cos(a) * 70 * s, y: head.y + 20 * s + sin(a) * 30 * s)
+            }
+            if timer > 7 {
+                step = 1
+                stage.brain.sceneSwat({ [weak self] in self?.nearest }) { [weak self] in
+                    guard let self else { return }
+                    for f in self.flies { f.dodge(from: self.head) }
+                }
+            }
+        case 1:
+            if timer > 11 {
+                step = 2
+                for f in flies { f.target = CGPoint(x: head.x + .random(in: -60...60) * s, y: head.y + .random(in: 30...80) * s) }
+                stage.brain.scenePounce({ [weak self] in self?.nearest }) { [weak self] in
+                    guard let self else { return }
+                    for f in self.flies { f.dodge(from: self.stage.body.pos) }
+                    self.stage.say(["Erano stelle. Quasi.", "Luci volanti. Inaccettabile.", "Ne ho quasi presa una."].randomElement()!)
+                }
+            }
+        case 2:
+            if timer > 16 {
+                step = 3
+                for f in flies { f.target = CGPoint(x: f.pos.x + .random(in: -200...200) * s, y: f.pos.y + 600 * s) }
+            }
+        default:
+            return flies.allSatisfy { offscreen($0, world) } || timer > 26
         }
         return false
     }
