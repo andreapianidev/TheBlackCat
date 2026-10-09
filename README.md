@@ -8,6 +8,8 @@ lo ha lanciato.
 App macOS nativa (macOS 26 o successivo), solo in italiano per ora. Vive nella
 barra dei menu, non ha icona nel Dock.
 
+Pagina del progetto: <https://www.andreapiani.com/the-black-cat.html>
+
 ## Compilare
 
 ```bash
@@ -73,5 +75,10 @@ Foglio con tutte le posture: `tools/PoseSheet`.
 Quello che il gatto vede e sente resta sul Mac e non viene salvato. L'unica
 eccezione è Agnes, se la scegli: allora la situazione da cui nasce un pensiero
 e, solo se lo attivi, l'immagine ridotta dello schermo vanno ad Agnes.
+
+## Licenza
+
+MIT, vedi [LICENSE](LICENSE). Il codice si può usare, studiare e modificare
+liberamente, citando l'autore.
 
 © 2026 The Black Cat · Andrea Piani · NIE Z2331796-S · Tijarafe, Santa Cruz de Tenerife · Islas Canarias

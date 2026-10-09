@@ -10,8 +10,13 @@ la grafica di base non va stravolta.
 ## Dove sta tutto
 
 - Progetto: `~/prototipi/TheBlackCat`
-- Repository: `andreapianidev/TheBlackCat`, **privato** (verifica con
-  `gh api repos/andreapianidev/TheBlackCat --jq .private` prima di ogni push)
+- Repository: `andreapianidev/TheBlackCat`, **pubblico** dal 9 ottobre 2026,
+  open source con licenza MIT. Mai segreti nei commit: chiavi solo nel vault
+  e nel portachiavi.
+- Pagina del progetto: <https://www.andreapiani.com/the-black-cat.html>
+  (sorgente in `~/prototipi/andreapiani.com/sito-web/the-black-cat.html`;
+  il gatto della pagina e' il rig portato in JavaScript in
+  `assets/blackcat/rig.js`)
 - App installata: `/Applications/The Black Cat.app` (build Release)
 - Memoria del gatto: `~/Library/Application Support/TheBlackCat/cat.json`
 - Impostazioni: `defaults read app.andreapiani.theblackcat`
