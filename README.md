@@ -76,6 +76,11 @@ Quello che il gatto vede e sente resta sul Mac e non viene salvato. L'unica
 eccezione è Agnes, se la scegli: allora la situazione da cui nasce un pensiero
 e, solo se lo attivi, l'immagine ridotta dello schermo vanno ad Agnes.
 
+## Contribuire
+
+Cerchiamo contributor: traduzioni, mantelli, posture, scenette, prove su Mac
+diversi. Da dove cominciare e come aprire una pull request: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Licenza
 
 MIT, vedi [LICENSE](LICENSE). Il codice si può usare, studiare e modificare
